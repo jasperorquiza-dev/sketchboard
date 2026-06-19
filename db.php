@@ -2,15 +2,28 @@
 // db.php
 declare(strict_types=1);
 
+// Default configuration (Local XAMPP development)
+$dbHost = 'localhost';
+$dbUser = 'root';
+$dbPass = '';
+$dbName = 'sketchboard';
+
+// Load production configuration if it exists
+if (file_exists(__DIR__ . '/config.php')) {
+    include __DIR__ . '/config.php';
+}
+
 try {
-    // Connect to MySQL server and ensure the database exists
-    $dsnWithoutDb = "mysql:host=localhost;charset=utf8mb4";
-    $pdo = new PDO($dsnWithoutDb, "root", "");
-    $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    $pdo->exec("CREATE DATABASE IF NOT EXISTS sketchboard");
+    // Connect and ensure DB exists if running on local XAMPP
+    if ($dbHost === 'localhost' && $dbUser === 'root' && $dbPass === '') {
+        $dsnWithoutDb = "mysql:host={$dbHost};charset=utf8mb4";
+        $pdo = new PDO($dsnWithoutDb, $dbUser, $dbPass);
+        $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $pdo->exec("CREATE DATABASE IF NOT EXISTS `{$dbName}`");
+    }
     
     // Connect to the sketchboard database
-    $db = new PDO("mysql:host=localhost;dbname=sketchboard;charset=utf8mb4", "root", "");
+    $db = new PDO("mysql:host={$dbHost};dbname={$dbName};charset=utf8mb4", $dbUser, $dbPass);
     $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $db->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
     

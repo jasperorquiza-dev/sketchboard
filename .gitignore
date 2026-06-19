@@ -1,4 +1,5 @@
 rooms_data/
 rooms/
+config.php
 *.log
 .vscode/
