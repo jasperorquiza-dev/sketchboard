@@ -5,6 +5,18 @@ declare(strict_types=1);
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/db.php';
 
+if (session_status() === PHP_SESSION_NONE) {
+    session_start([
+        'cookie_httponly' => true,
+        'cookie_samesite' => 'Lax',
+    ]);
+}
+if (!isset($_SESSION['user_id'])) {
+    http_response_code(403);
+    echo "Access denied: Unauthorized.";
+    exit;
+}
+
 header('Content-Type: text/plain');
 
 $to = 'jaspe.test.email@gmail.com'; // Change this to the email you want to test
