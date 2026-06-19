@@ -36,7 +36,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-sketch_cleanup_stale_rooms();
+// Only run stale room cleanup ~5% of requests to reduce disk I/O
+if (mt_rand(1, 20) === 1) {
+    sketch_cleanup_stale_rooms();
+}
 
 $room = sketch_room_id($_GET['room'] ?? $_POST['room'] ?? null);
 if ($room === '') {
@@ -53,10 +56,21 @@ $defaultRoom = [
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-    $roomData = sketch_with_locked_json_file($roomFile, $defaultRoom, static function (array $roomData) use ($ttl): array {
-        $roomData['peers'] = sketch_filter_active_peers($roomData['peers'] ?? [], $ttl);
-        return $roomData;
-    });
+    // Read without locking first to check if any peers are stale
+    $rawData = sketch_read_json_file($roomFile, $defaultRoom);
+    $allPeers = $rawData['peers'] ?? [];
+    $activePeers = sketch_filter_active_peers($allPeers, $ttl);
+
+    // Only acquire lock and write if stale peers were actually found
+    if (count($activePeers) !== count($allPeers)) {
+        $roomData = sketch_with_locked_json_file($roomFile, $defaultRoom, static function (array $roomData) use ($ttl): array {
+            $roomData['peers'] = sketch_filter_active_peers($roomData['peers'] ?? [], $ttl);
+            return $roomData;
+        });
+    } else {
+        $roomData = $rawData;
+        $roomData['peers'] = $activePeers;
+    }
 
     sketch_cleanup_room_if_idle($room, $roomData);
 

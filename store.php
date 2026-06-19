@@ -102,7 +102,7 @@ try {
 } catch (InvalidArgumentException $exception) {
     sketch_json_response(['error' => $exception->getMessage()], 422);
 } catch (Throwable $exception) {
-    sketch_json_response(['error' => 'Unable to save board state: ' . $exception->getMessage() . ' in ' . $exception->getFile() . ':' . $exception->getLine()], 500);
+    sketch_json_response(['error' => 'Unable to save board state. Please try again.'], 500);
 }
 
 sketch_json_response([
