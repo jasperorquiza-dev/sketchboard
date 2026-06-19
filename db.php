@@ -39,8 +39,16 @@ try {
         name VARCHAR(100) NOT NULL,
         owner_user_id INT NOT NULL,
         created_at INT NOT NULL,
+        is_deleted_by_owner TINYINT(1) NOT NULL DEFAULT 0,
         FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
     ) ENGINE=InnoDB");
+
+    // Dynamic schema migration
+    try {
+        $db->exec("ALTER TABLE rooms ADD COLUMN is_deleted_by_owner TINYINT(1) NOT NULL DEFAULT 0");
+    } catch (PDOException $e) {
+        // Ignore if column already exists
+    }
 
     // Create room memberships table
     $db->exec("CREATE TABLE IF NOT EXISTS room_memberships (

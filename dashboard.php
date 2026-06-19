@@ -93,13 +93,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $stmt = $db->prepare("SELECT id FROM rooms WHERE code = ? AND owner_user_id = ? LIMIT 1");
             $stmt->execute([$roomCode, $userId]);
             if ($stmt->fetch()) {
-                // Delete from DB
-                $stmt = $db->prepare("DELETE FROM rooms WHERE code = ? AND owner_user_id = ?");
+                // Mark as deleted by owner in DB rather than completely deleting physical files and records
+                $stmt = $db->prepare("UPDATE rooms SET is_deleted_by_owner = 1 WHERE code = ? AND owner_user_id = ?");
                 $stmt->execute([$roomCode, $userId]);
                 
-                // Delete physical JSON files
-                sketch_delete_room_files($roomCode);
-                $success = 'Whiteboard room deleted successfully.';
+                $success = 'Whiteboard room deleted from your dashboard list successfully.';
             } else {
                 $error = 'You do not own this whiteboard room.';
             }

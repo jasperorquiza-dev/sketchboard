@@ -192,10 +192,17 @@ function sketch_record_room_membership(int $userId, string $room): void
         global $db;
         require_once __DIR__ . '/db.php';
 
-        $stmt = $db->prepare("SELECT owner_user_id FROM rooms WHERE code = ? LIMIT 1");
+        $stmt = $db->prepare("SELECT owner_user_id, is_deleted_by_owner FROM rooms WHERE code = ? LIMIT 1");
         $stmt->execute([$room]);
-        $ownerUserId = $stmt->fetchColumn();
-        if ($ownerUserId === false || (int) $ownerUserId === $userId) {
+        $row = $stmt->fetch();
+        if ($row === false) {
+            return;
+        }
+
+        $ownerUserId = (int) $row['owner_user_id'];
+        $isDeletedByOwner = (int) ($row['is_deleted_by_owner'] ?? 0);
+
+        if ($ownerUserId === $userId && !$isDeletedByOwner) {
             return;
         }
 
@@ -240,7 +247,7 @@ function sketch_fetch_user_whiteboards(int $userId): array
 
         $stmt = $db->prepare("SELECT id, code, name, owner_user_id, created_at
             FROM rooms
-            WHERE owner_user_id = ?
+            WHERE owner_user_id = ? AND is_deleted_by_owner = 0
             ORDER BY created_at DESC");
         $stmt->execute([$userId]);
         foreach ($stmt->fetchAll() as $row) {
@@ -265,7 +272,7 @@ function sketch_fetch_user_whiteboards(int $userId): array
         $stmt = $db->prepare("SELECT r.id, r.code, r.name, r.owner_user_id, r.created_at, rm.joined_at, rm.last_joined_at
             FROM room_memberships rm
             INNER JOIN rooms r ON r.code = rm.room_code
-            WHERE rm.user_id = ? AND r.owner_user_id <> ?
+            WHERE rm.user_id = ? AND (r.owner_user_id <> ? OR r.is_deleted_by_owner = 1)
             ORDER BY rm.last_joined_at DESC");
         $stmt->execute([$userId, $userId]);
         foreach ($stmt->fetchAll() as $row) {
