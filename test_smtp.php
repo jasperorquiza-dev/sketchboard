@@ -46,8 +46,12 @@ try {
         return $data;
     };
 
-    $write = function($socket, $cmd) {
-        echo "C: " . $cmd . "\n";
+    $write = function($socket, $cmd, $mask = false) {
+        if ($mask) {
+            echo "C: [MASKED]\n";
+        } else {
+            echo "C: " . $cmd . "\n";
+        }
         fwrite($socket, $cmd . "\r\n");
     };
 
@@ -72,10 +76,10 @@ try {
     $write($socket, "AUTH LOGIN");
     $read($socket);
 
-    $write($socket, base64_encode($username));
+    $write($socket, base64_encode($username), true);
     $read($socket);
 
-    $write($socket, base64_encode($password));
+    $write($socket, base64_encode($password), true);
     $res = $read($socket);
     if (strpos($res, '235') === false) {
         throw new Exception("SMTP Authentication failed");
