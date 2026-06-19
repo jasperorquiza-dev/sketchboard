@@ -21,6 +21,10 @@ sketch_cleanup_stale_rooms();
 
 $roomId = sketch_room_id($_GET['id'] ?? null);
 $isExpired = !sketch_room_is_valid($roomId);
+
+if (!$isExpired) {
+    sketch_record_room_membership((int) ($_SESSION['user_id'] ?? 0), $roomId);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -193,5 +197,7 @@ $isExpired = !sketch_room_is_valid($roomId);
         window.addEventListener('pagehide', hideSketchLoader);
     </script>
     <script src="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>/script.js?v=<?php echo (int) filemtime(__DIR__ . '/script.js'); ?>"></script>
+    <script src="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>/eraser_fix.js?v=<?php echo (int) filemtime(__DIR__ . '/eraser_fix.js'); ?>"></script>
+    <script src="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>/realtime_ws.js?v=<?php echo (int) filemtime(__DIR__ . '/realtime_ws.js'); ?>"></script>
 </body>
 </html>

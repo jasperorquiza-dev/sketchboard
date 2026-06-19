@@ -121,9 +121,18 @@ function sketch_validate_stroke($rawStroke): array
     $color = (string) ($rawStroke['color'] ?? '#111111');
     $size = (float) ($rawStroke['size'] ?? 4);
     $points = $rawStroke['points'] ?? [];
+    $tool = strtolower(trim((string) ($rawStroke['tool'] ?? 'pen')));
 
     if ($id === '' || $owner === '' || !preg_match('/^#[0-9a-fA-F]{6}$/', $color) || $size < 1 || $size > 100 || !is_array($points)) {
         throw new InvalidArgumentException('Malformed stroke.');
+    }
+
+    if (!in_array($tool, ['pen', 'erase'], true)) {
+        $tool = 'pen';
+    }
+
+    if (!isset($rawStroke['tool']) && strtoupper($color) === '#FFFFFF') {
+        $tool = 'erase';
     }
 
     $sanitizedPoints = [];
@@ -155,6 +164,7 @@ function sketch_validate_stroke($rawStroke): array
         'color' => strtoupper($color),
         'size' => round($size, 2),
         'points' => $sanitizedPoints,
+        'tool' => $tool,
         'createdAt' => (int) ($rawStroke['createdAt'] ?? round(microtime(true) * 1000)),
     ];
 }
@@ -235,6 +245,12 @@ function sketch_build_state_meta(array $strokes): array
 
     foreach ($strokes as $stroke) {
         if (!is_array($stroke) || !is_array($stroke['points'] ?? null) || empty($stroke['points'])) {
+            continue;
+        }
+
+        $strokeTool = (string) ($stroke['tool'] ?? 'pen');
+        $strokeColor = strtoupper((string) ($stroke['color'] ?? ''));
+        if ($strokeTool === 'erase' || (!isset($stroke['tool']) && $strokeColor === '#FFFFFF')) {
             continue;
         }
 

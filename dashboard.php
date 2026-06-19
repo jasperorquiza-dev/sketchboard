@@ -110,15 +110,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// Fetch user's rooms
-$userRooms = [];
-try {
-    $stmt = $db->prepare("SELECT * FROM rooms WHERE owner_user_id = ? ORDER BY created_at DESC");
-    $stmt->execute([$userId]);
-    $userRooms = $stmt->fetchAll();
-} catch (PDOException $e) {
-    $error = 'Database error fetching rooms: ' . $e->getMessage();
+// Handle Joined Room Removal
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'remove_room') {
+    if (!sketch_verify_csrf_token($_POST['csrf_token'] ?? null)) {
+        $error = 'Session expired or invalid security token. Please try again.';
+    } else {
+        $roomCode = trim((string)($_POST['room_code'] ?? ''));
+        if ($roomCode !== '') {
+            try {
+                sketch_remove_room_membership($userId, $roomCode);
+                $success = 'Joined board removed from your list.';
+            } catch (Throwable $e) {
+                $error = 'Unable to remove joined board.';
+            }
+        }
+    }
 }
+
+// Fetch user's rooms, including joined boards
+$userRooms = sketch_fetch_user_whiteboards($userId);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -408,10 +418,37 @@ try {
             gap: 4px;
         }
 
+        .room-title-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
         .room-name-text {
             font-weight: 700;
             font-size: 1.05rem;
             color: var(--clr-ink);
+        }
+
+        .room-status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 8px;
+            border-radius: 999px;
+            font-size: 0.7rem;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            border: 1px solid rgba(0,0,0,0.12);
+        }
+
+        .room-status-badge.owned {
+            background: var(--clr-green);
+        }
+
+        .room-status-badge.joined {
+            background: var(--clr-purple);
         }
 
         .room-meta-text {
@@ -548,17 +585,25 @@ try {
                 
                 <?php if (empty($userRooms)): ?>
                     <div class="empty-state">
-                        You haven't created any whiteboards yet. Create one on the left to start sketching!
+                        You have no whiteboards yet. Create a new board or join one with a code to see it here.
                     </div>
                 <?php else: ?>
                     <div class="rooms-list">
                         <?php foreach ($userRooms as $room): ?>
                             <div class="room-item">
                                 <div class="room-details">
-                                    <span class="room-name-text"><?php echo htmlspecialchars($room['name'], ENT_QUOTES, 'UTF-8'); ?></span>
+                                    <div class="room-title-row">
+                                        <span class="room-name-text"><?php echo htmlspecialchars($room['name'], ENT_QUOTES, 'UTF-8'); ?></span>
+                                        <span class="room-status-badge <?php echo !empty($room['is_owned']) ? 'owned' : 'joined'; ?>">
+                                            <?php echo htmlspecialchars((string) ($room['relationship_label'] ?? 'ROOM'), ENT_QUOTES, 'UTF-8'); ?>
+                                        </span>
+                                    </div>
                                     <span class="room-meta-text">
                                         CODE: <?php echo htmlspecialchars(substr($room['code'], 3), ENT_QUOTES, 'UTF-8'); ?> &bull; 
                                         CREATED: <?php echo date('Y-m-d H:i', $room['created_at']); ?>
+                                        <?php if (empty($room['is_owned'])): ?>
+                                            &bull; JOINED: <?php echo date('Y-m-d H:i', (int) ($room['relation_at'] ?? $room['created_at'])); ?>
+                                        <?php endif; ?>
                                     </span>
                                 </div>
                                 <div class="room-actions">
@@ -566,10 +611,12 @@ try {
                                     <button class="action-btn btn-copy" onclick="copyRoomLink('<?php echo htmlspecialchars(substr($room['code'], 3), ENT_QUOTES, 'UTF-8'); ?>')">COPY</button>
                                     
                                     <form method="POST" action="dashboard.php" style="display:inline;">
-                                        <input type="hidden" name="action" value="delete_room">
+                                        <input type="hidden" name="action" value="<?php echo !empty($room['is_owned']) ? 'delete_room' : 'remove_room'; ?>">
                                         <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(sketch_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
                                         <input type="hidden" name="room_code" value="<?php echo htmlspecialchars($room['code'], ENT_QUOTES, 'UTF-8'); ?>">
-                                        <button type="button" class="action-btn btn-delete" onclick="confirmDelete(this.form)">DELETE</button>
+                                        <button type="button" class="action-btn btn-delete" onclick="confirmBoardAction(this.form, <?php echo !empty($room['is_owned']) ? 'true' : 'false'; ?>)">
+                                            <?php echo !empty($room['is_owned']) ? 'DELETE' : 'REMOVE'; ?>
+                                        </button>
                                     </form>
                                 </div>
                             </div>
@@ -667,17 +714,19 @@ try {
             });
         }
 
-        function confirmDelete(form) {
+        function confirmBoardAction(form, isOwned) {
             showCustomDialog({
-                title: 'DELETE BOARD?',
-                message: 'Are you sure you want to delete this whiteboard? This cannot be undone.',
+                title: isOwned ? 'DELETE BOARD?' : 'REMOVE BOARD?',
+                message: isOwned
+                    ? 'Are you sure you want to delete this whiteboard? This cannot be undone.'
+                    : 'Remove this joined board from your dashboard? You can join it again with the code later.',
                 actions: [
                     { 
                         label: 'CANCEL', 
                         style: { background: 'rgba(0,0,0,0.06)' } 
                     },
                     { 
-                        label: 'DELETE', 
+                        label: isOwned ? 'DELETE' : 'REMOVE', 
                         style: { background: 'var(--clr-red)' },
                         onClick: () => form.submit()
                     }

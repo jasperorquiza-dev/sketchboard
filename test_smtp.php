@@ -15,10 +15,18 @@ if (isset($_GET['email'])) {
 echo "Testing SMTP to: $to\n";
 echo "====================================\n";
 
-$host = 'smtp.gmail.com';
-$port = 587;
-$username = 'noreply.sketch45@gmail.com';
-$password = 'caaz kydh lvvp hhrg';
+$host = (string) sketch_config('smtp.host', '');
+$port = (int) sketch_config('smtp.port', 587);
+$username = (string) sketch_config('smtp.username', '');
+$password = (string) sketch_config('smtp.password', '');
+$fromEmail = (string) sketch_config('smtp.from_email', $username);
+$fromName = (string) sketch_config('smtp.from_name', 'Sketchboard');
+
+if ($host === '' || $username === '' || $password === '') {
+    http_response_code(500);
+    echo "SMTP is not configured in config.php\n";
+    exit;
+}
 
 try {
     $socket = fsockopen($host, $port, $errno, $errstr, 15);
@@ -73,7 +81,7 @@ try {
         throw new Exception("SMTP Authentication failed");
     }
 
-    $write($socket, "MAIL FROM:<$username>");
+    $write($socket, "MAIL FROM:<$fromEmail>");
     $read($socket);
 
     $write($socket, "RCPT TO:<$to>");
@@ -85,7 +93,7 @@ try {
     $headers = [
         "MIME-Version: 1.0",
         "Content-Type: text/html; charset=UTF-8",
-        "From: Sketchboard <$username>",
+        "From: $fromName <$fromEmail>",
         "To: <$to>",
         "Subject: SMTP Test",
         "Date: " . date('r'),

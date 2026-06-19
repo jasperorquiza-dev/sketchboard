@@ -2,16 +2,12 @@
 // db.php
 declare(strict_types=1);
 
-// Default configuration (Local XAMPP development)
-$dbHost = 'localhost';
-$dbUser = 'root';
-$dbPass = '';
-$dbName = 'sketchboard';
+require_once __DIR__ . '/app_config.php';
 
-// Load production configuration if it exists
-if (file_exists(__DIR__ . '/config.php')) {
-    include __DIR__ . '/config.php';
-}
+$dbHost = (string) sketch_config('database.host', 'localhost');
+$dbUser = (string) sketch_config('database.user', 'root');
+$dbPass = (string) sketch_config('database.password', '');
+$dbName = (string) sketch_config('database.name', 'sketchboard');
 
 try {
     // Connect and ensure DB exists if running on local XAMPP
@@ -44,6 +40,18 @@ try {
         owner_user_id INT NOT NULL,
         created_at INT NOT NULL,
         FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB");
+
+    // Create room memberships table
+    $db->exec("CREATE TABLE IF NOT EXISTS room_memberships (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        room_code VARCHAR(50) NOT NULL,
+        joined_at INT NOT NULL,
+        last_joined_at INT NOT NULL,
+        UNIQUE KEY user_room (user_id, room_code),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (room_code) REFERENCES rooms(code) ON DELETE CASCADE
     ) ENGINE=InnoDB");
 
     // Create room_states table

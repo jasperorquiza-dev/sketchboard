@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/app_config.php';
+
 // Security Headers
 if (!headers_sent()) {
     header('X-Frame-Options: DENY');
@@ -38,7 +40,12 @@ function sketch_verify_csrf_token(?string $token): bool
 }
 
 // Encryption Helpers
-define('SKETCH_SECRET_KEY', 'sk-3f7e5b129c3f42e18f5b1e247bf2613e');
+if (!defined('SKETCH_SECRET_KEY')) {
+    define(
+        'SKETCH_SECRET_KEY',
+        (string) sketch_config('app.secret_key', 'change-this-secret-key-in-config')
+    );
+}
 
 function sketch_get_room_encryption_key(string $room): string
 {
@@ -154,6 +161,154 @@ function sketch_json_response(array $payload, int $status = 200): void
     header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
     echo json_encode($payload, JSON_UNESCAPED_SLASHES);
     exit;
+}
+
+function sketch_user_owns_room(int $userId, string $room): bool
+{
+    $room = sketch_room_id($room);
+    if ($userId <= 0 || $room === '') {
+        return false;
+    }
+
+    try {
+        global $db;
+        require_once __DIR__ . '/db.php';
+        $stmt = $db->prepare("SELECT id FROM rooms WHERE code = ? AND owner_user_id = ? LIMIT 1");
+        $stmt->execute([$room, $userId]);
+        return (bool) $stmt->fetchColumn();
+    } catch (Exception $e) {
+        return false;
+    }
+}
+
+function sketch_record_room_membership(int $userId, string $room): void
+{
+    $room = sketch_room_id($room);
+    if ($userId <= 0 || $room === '') {
+        return;
+    }
+
+    try {
+        global $db;
+        require_once __DIR__ . '/db.php';
+
+        $stmt = $db->prepare("SELECT owner_user_id FROM rooms WHERE code = ? LIMIT 1");
+        $stmt->execute([$room]);
+        $ownerUserId = $stmt->fetchColumn();
+        if ($ownerUserId === false || (int) $ownerUserId === $userId) {
+            return;
+        }
+
+        $now = time();
+        $stmt = $db->prepare("INSERT INTO room_memberships (user_id, room_code, joined_at, last_joined_at)
+            VALUES (?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE last_joined_at = VALUES(last_joined_at)");
+        $stmt->execute([$userId, $room, $now, $now]);
+    } catch (Exception $e) {
+        // Ignore membership tracking failures.
+    }
+}
+
+function sketch_remove_room_membership(int $userId, string $room): void
+{
+    $room = sketch_room_id($room);
+    if ($userId <= 0 || $room === '') {
+        return;
+    }
+
+    try {
+        global $db;
+        require_once __DIR__ . '/db.php';
+        $stmt = $db->prepare("DELETE FROM room_memberships WHERE user_id = ? AND room_code = ?");
+        $stmt->execute([$userId, $room]);
+    } catch (Exception $e) {
+        // Ignore.
+    }
+}
+
+function sketch_fetch_user_whiteboards(int $userId): array
+{
+    if ($userId <= 0) {
+        return [];
+    }
+
+    try {
+        global $db;
+        require_once __DIR__ . '/db.php';
+
+        $boards = [];
+
+        $stmt = $db->prepare("SELECT id, code, name, owner_user_id, created_at
+            FROM rooms
+            WHERE owner_user_id = ?
+            ORDER BY created_at DESC");
+        $stmt->execute([$userId]);
+        foreach ($stmt->fetchAll() as $row) {
+            $code = (string) ($row['code'] ?? '');
+            if ($code === '') {
+                continue;
+            }
+
+            $boards[$code] = [
+                'id' => (int) ($row['id'] ?? 0),
+                'code' => $code,
+                'name' => (string) ($row['name'] ?? 'Untitled board'),
+                'owner_user_id' => (int) ($row['owner_user_id'] ?? 0),
+                'created_at' => (int) ($row['created_at'] ?? 0),
+                'relation' => 'owned',
+                'relation_at' => (int) ($row['created_at'] ?? 0),
+                'is_owned' => true,
+                'relationship_label' => 'OWNED',
+            ];
+        }
+
+        $stmt = $db->prepare("SELECT r.id, r.code, r.name, r.owner_user_id, r.created_at, rm.joined_at, rm.last_joined_at
+            FROM room_memberships rm
+            INNER JOIN rooms r ON r.code = rm.room_code
+            WHERE rm.user_id = ? AND r.owner_user_id <> ?
+            ORDER BY rm.last_joined_at DESC");
+        $stmt->execute([$userId, $userId]);
+        foreach ($stmt->fetchAll() as $row) {
+            $code = (string) ($row['code'] ?? '');
+            if ($code === '' || isset($boards[$code])) {
+                continue;
+            }
+
+            $relationAt = (int) ($row['last_joined_at'] ?? $row['joined_at'] ?? $row['created_at'] ?? 0);
+            $boards[$code] = [
+                'id' => (int) ($row['id'] ?? 0),
+                'code' => $code,
+                'name' => (string) ($row['name'] ?? 'Untitled board'),
+                'owner_user_id' => (int) ($row['owner_user_id'] ?? 0),
+                'created_at' => (int) ($row['created_at'] ?? 0),
+                'relation' => 'joined',
+                'relation_at' => $relationAt,
+                'is_owned' => false,
+                'relationship_label' => 'JOINED',
+            ];
+        }
+
+        $boards = array_values($boards);
+        usort($boards, static function (array $a, array $b): int {
+            $aTime = (int) ($a['relation_at'] ?? 0);
+            $bTime = (int) ($b['relation_at'] ?? 0);
+            if ($aTime !== $bTime) {
+                return $bTime <=> $aTime;
+            }
+
+            $aOwned = !empty($a['is_owned']);
+            $bOwned = !empty($b['is_owned']);
+            if ($aOwned !== $bOwned) {
+                return $aOwned ? -1 : 1;
+            }
+
+            return strcmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
+        });
+
+        return $boards;
+    } catch (Exception $e) {
+        return [];
+    }
 }
 
 function sketch_room_file(string $room): string
@@ -426,6 +581,8 @@ function sketch_delete_room_files(string $room): void
         global $db;
         require_once __DIR__ . '/db.php';
         $stmt = $db->prepare("DELETE FROM room_states WHERE room = ?");
+        $stmt->execute([$room]);
+        $stmt = $db->prepare("DELETE FROM room_memberships WHERE room_code = ?");
         $stmt->execute([$room]);
     } catch (Exception $e) {
         // Ignore

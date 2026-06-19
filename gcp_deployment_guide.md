@@ -17,9 +17,17 @@ Follow this step-by-step procedure to deploy the application on a Google Cloud P
 ---
 
 ## 2. Connect via SSH
-Connect to your VM using the `gcloud` command-line utility or via the "SSH" button next to your instance in the GCP console:
+1. In the GCP console, go to **Compute Engine → VM Instances** and copy your VM's **External IP**.
+2. Add your public key to the VM:
+   - In GCP Console → VM → **Edit** → scroll to **SSH Keys** → paste the contents of your `~/.ssh/id_rsa.pub` (or generate one first with `ssh-keygen`).
+   - Click **Save**.
+3. Connect directly:
 ```bash
-gcloud compute ssh --zone=YOUR_VM_ZONE YOUR_VM_NAME
+ssh your_username@YOUR_VM_EXTERNAL_IP
+```
+Example:
+```bash
+ssh jasperobsequias99@34.123.45.67
 ```
 
 ---

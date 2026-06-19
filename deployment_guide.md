@@ -1,87 +1,197 @@
-# Sketchboard 2 - Namecheap Stellar SSH Deployment Guide
+# Sketchboard 2 GCP VM Setup
 
-Follow this step-by-step SSH procedure to deploy the application on Namecheap Stellar hosting for **sketchboard.online**.
+This app fits a single Google Compute Engine VM with Apache, PHP, and MariaDB. The setup below assumes:
 
----
+- Ubuntu 24.04 LTS
+- One public VM
+- Apache serving the repo directly
+- MariaDB running on the same VM
+- HTTPS via Let's Encrypt
 
-## 1. Enable SSH Access in cPanel
-1. Log in to your **Namecheap cPanel**.
-2. Search for and click **SSH Access** (under the *Security* section).
-3. Click **Manage SSH Keys** to generate a new key or upload your existing public key (`~/.ssh/id_rsa.pub`).
-4. Click **Authorize** next to the key you added/generated.
-5. Note the connection details:
-   * **Host:** `sketchboard.online` (or your server's IP address)
-   * **Port:** `21098` (Namecheap's custom SSH port)
-   * **Username:** Your cPanel username
+## 1. Create the VM
 
----
+Use a small general-purpose instance to start, for example:
 
-## 2. Connect via SSH
-From your local terminal, run the following command to connect to your Namecheap server:
+- Machine type: `e2-small` or `e2-medium`
+- Boot disk: Ubuntu 24.04 LTS
+- Firewall tags: allow `80` and `443`
+
+Reserve a static external IP and point your domain DNS `A` record to that IP before requesting SSL.
+
+## 2. Connect and install packages
+
+SSH into the VM, then run:
+
 ```bash
-ssh -p 21098 your_cpanel_username@sketchboard.online
+sudo apt update
+sudo apt install -y apache2 mariadb-server certbot python3-certbot-apache git unzip
+sudo apt install -y php php-cli php-mysql php-mbstring php-xml php-curl php-zip php-gd php-intl
+sudo a2enmod rewrite headers ssl
+sudo systemctl enable --now apache2 mariadb
 ```
 
----
+If you want the automatic path, skip the manual steps below and use `deploy/gcp-vm-bootstrap.sh` with environment variables.
 
-## 3. Clone the Repository
-On your server, navigate to the web root directory (usually `public_html` for your primary domain):
+## 3. Create the application user and directories
+
 ```bash
-cd ~/public_html
-```
-If the directory is empty or has placeholder files, remove them:
-```bash
-rm -f index.html index.php default.html
-```
-Clone your GitHub repository:
-```bash
-git clone https://github.com/jasperorquiza-dev/sketchboard.git .
+sudo adduser --system --group --home /var/www/sketchboard sketchboard
+sudo mkdir -p /var/www/sketchboard
+sudo chown -R sketchboard:sketchboard /var/www/sketchboard
 ```
 
----
+## 4. Deploy the code
 
-## 4. Setup MySQL Database in cPanel
-1. In cPanel, navigate to **MySQL Database Wizard**.
-2. **Step 1: Create a Database:** Name it (e.g., `yourcpanel_sketch`). Click *Next*.
-3. **Step 2: Create Database User:** Enter a username (e.g., `yourcpanel_user`) and generate a secure password. Click *Create User*.
-4. **Step 3: Add User to Database:** Check **ALL PRIVILEGES** and click *Next Step*.
-
----
-
-## 5. Configure Production Settings
-Create the production `config.php` file on the server using `nano`:
 ```bash
-nano config.php
+sudo -u sketchboard git clone https://github.com/jasperorquiza-dev/sketchboard.git /var/www/sketchboard
+cd /var/www/sketchboard
+cp config.sample.php config.php
 ```
-Paste and fill in the database configuration:
+
+If the repo already exists on the VM:
+
+```bash
+cd /var/www/sketchboard
+sudo -u sketchboard git pull
+```
+
+## 5. Create the database
+
+Then create the app database and user:
+
+```bash
+sudo mysql <<'SQL'
+CREATE DATABASE IF NOT EXISTS sketchboard CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS 'sketchboard'@'localhost' IDENTIFIED BY 'replace-with-a-strong-password';
+GRANT ALL PRIVILEGES ON sketchboard.* TO 'sketchboard'@'localhost';
+FLUSH PRIVILEGES;
+SQL
+```
+
+## 6. Configure the app
+
+Edit `config.php` and set:
+
+- `app.secret_key`
+- `database.*`
+- `smtp.*`
+
+Example:
+
 ```php
 <?php
-// Production Database Credentials
-$dbHost = 'localhost';
-$dbUser = 'your_cpanel_db_user'; // e.g. 'yourcpanel_user'
-$dbPass = 'your_cpanel_db_password';
-$dbName = 'your_cpanel_db_name'; // e.g. 'yourcpanel_sketch'
+declare(strict_types=1);
+
+return [
+    'app' => [
+        'secret_key' => 'generate-a-long-random-secret',
+    ],
+    'database' => [
+        'host' => '127.0.0.1',
+        'user' => 'sketchboard',
+        'password' => 'replace-with-a-strong-password',
+        'name' => 'sketchboard',
+    ],
+    'smtp' => [
+        'host' => 'smtp.gmail.com',
+        'port' => 587,
+        'username' => 'noreply@example.com',
+        'password' => 'app-password',
+        'from_email' => 'noreply@example.com',
+        'from_name' => 'Sketchboard',
+    ],
+];
 ```
-Save and exit `nano` by pressing `Ctrl + O`, then `Enter`, then `Ctrl + X`.
 
----
+Generate a strong app secret with:
 
-## 6. Secure the Rooms Data Folder
-Verify that the `rooms_data/` directory exists and has the correct permissions:
 ```bash
-mkdir -p rooms_data
-chmod 750 rooms_data
+openssl rand -hex 32
 ```
-The `.htaccess` file inside `rooms_data/` is already in the repository and will block direct browser downloads.
 
----
+You can also let the bootstrap script generate none of this manually by exporting `APP_SECRET_KEY`, `DB_PASS`, `SMTP_HOST`, `SMTP_USER`, and `SMTP_PASS` before running it.
 
-## 7. Enable HTTPS (SSL)
-Ensure you enforce SSL to protect session cookies and data transmission:
-1. In cPanel, search for **Namecheap SSL** or **Let's Encrypt** to install a certificate for `sketchboard.online`.
-2. To redirect all HTTP traffic to HTTPS, create or append to the main `.htaccess` in `~/public_html/`:
-```apache
-RewriteEngine On
-RewriteCond %{HTTPS} off
-RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+## 7. Set file permissions
+
+The app writes to `rooms/` and `rooms_data/`.
+
+```bash
+cd /var/www/sketchboard
+sudo mkdir -p rooms rooms_data
+sudo chown -R www-data:sketchboard rooms rooms_data
+sudo chmod -R 775 rooms rooms_data
+sudo find rooms rooms_data -type f -exec chmod 664 {} \;
 ```
+
+## 8. Configure Apache
+
+Copy the included vhost example:
+
+```bash
+sudo cp deploy/apache-sketchboard.conf /etc/apache2/sites-available/sketchboard.conf
+sudo nano /etc/apache2/sites-available/sketchboard.conf
+```
+
+Set `ServerName` and `DocumentRoot`, then enable the site:
+
+```bash
+sudo a2dissite 000-default.conf
+sudo a2ensite sketchboard.conf
+sudo apache2ctl configtest
+sudo systemctl reload apache2
+```
+
+## 9. Enable HTTPS
+
+Once DNS is live:
+
+```bash
+sudo certbot --apache -d your-domain.com -d www.your-domain.com
+```
+
+Certbot can add the HTTP to HTTPS redirect automatically.
+
+## 10. Open firewall ports
+
+If you are using UFW on the VM:
+
+```bash
+sudo ufw allow OpenSSH
+sudo ufw allow 'Apache Full'
+sudo ufw enable
+```
+
+Also make sure the GCP VPC firewall allows inbound `tcp:80` and `tcp:443`.
+
+## 11. Verify the deployment
+
+Run these checks:
+
+```bash
+php -m | grep -E 'pdo_mysql|openssl'
+php -l auth.php
+php -l bootstrap.php
+php -l db.php
+curl -I http://your-domain.com
+curl -I https://your-domain.com
+```
+
+Optional SMTP test:
+
+```bash
+curl "https://your-domain.com/test_smtp.php?email=you@example.com"
+```
+
+## 12. Basic update flow
+
+```bash
+cd /var/www/sketchboard
+sudo -u sketchboard git pull
+sudo systemctl reload apache2
+```
+
+## Notes
+
+- This app currently auto-creates its database tables on first request through `db.php`.
+- Keep `config.php` out of git. It is already listed in `.gitignore`.
+- If you later move MySQL off-box or put Apache behind a load balancer, the current structure can stay mostly unchanged.

@@ -1,8 +1,22 @@
 <?php
-// Sketchboard Production Database Configuration
-// Copy this file to "config.php" and configure your production database credentials.
+declare(strict_types=1);
 
-$dbHost = 'localhost';
-$dbUser = 'your_cpanel_db_user';
-$dbPass = 'your_cpanel_db_password';
-$dbName = 'your_cpanel_db_name';
+return [
+    'app' => [
+        'secret_key' => 'replace-with-a-long-random-secret',
+    ],
+    'database' => [
+        'host' => '127.0.0.1',
+        'user' => 'sketchboard',
+        'password' => 'replace-with-a-strong-password',
+        'name' => 'sketchboard',
+    ],
+    'smtp' => [
+        'host' => 'smtp.gmail.com',
+        'port' => 587,
+        'username' => 'noreply@example.com',
+        'password' => 'replace-with-an-app-password',
+        'from_email' => 'noreply@example.com',
+        'from_name' => 'Sketchboard',
+    ],
+];

@@ -23,10 +23,16 @@ $success = '';
 $activeTab = 'login'; // 'login', 'register', or 'verify'
 
 function sendSmtpEmail($to, $subject, $htmlContent) {
-    $host = 'smtp.gmail.com';
-    $port = 587;
-    $username = 'noreply.sketch45@gmail.com';
-    $password = 'caaz kydh lvvp hhrg';
+    $host = (string) sketch_config('smtp.host', '');
+    $port = (int) sketch_config('smtp.port', 587);
+    $username = (string) sketch_config('smtp.username', '');
+    $password = (string) sketch_config('smtp.password', '');
+    $fromEmail = (string) sketch_config('smtp.from_email', $username);
+    $fromName = (string) sketch_config('smtp.from_name', 'Sketchboard');
+
+    if ($host === '' || $username === '' || $password === '') {
+        throw new Exception('SMTP is not configured. Update config.php before sending email.');
+    }
 
     $socket = fsockopen($host, $port, $errno, $errstr, 15);
     if (!$socket) {
@@ -78,7 +84,7 @@ function sendSmtpEmail($to, $subject, $htmlContent) {
         throw new Exception("SMTP Authentication failed: " . $res);
     }
 
-    $write($socket, "MAIL FROM:<$username>");
+    $write($socket, "MAIL FROM:<$fromEmail>");
     $read($socket);
 
     $write($socket, "RCPT TO:<$to>");
@@ -90,7 +96,7 @@ function sendSmtpEmail($to, $subject, $htmlContent) {
     $headers = [
         "MIME-Version: 1.0",
         "Content-Type: text/html; charset=UTF-8",
-        "From: Sketchboard <$username>",
+        "From: $fromName <$fromEmail>",
         "To: <$to>",
         "Subject: $subject",
         "Date: " . date('r'),
