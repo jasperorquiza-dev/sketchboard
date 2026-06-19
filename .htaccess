@@ -1,0 +1,9 @@
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^sk/([a-zA-Z0-9\-]+)$ v.php?id=$1 [L,QSA]
+
+# Block direct access to database files
+<FilesMatch "\.(sqlite|db)$">
+    Require all denied
+</FilesMatch>
