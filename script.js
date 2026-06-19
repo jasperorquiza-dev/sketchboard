@@ -1,1 +1,1620 @@
-class SketchApp{constructor(){const t=window.SKETCH_CONFIG||{};this.roomId=t.roomId||"",this.assetBase=t.assetBase||"",this.expired=Boolean(t.expired),this.intro=Boolean(t.intro),this.storeUrl=`${this.assetBase}/store.php`,this.sigUrl=`${this.assetBase}/sig.php`,this.canvas=document.getElementById("whiteboard"),this.ctx=this.canvas?this.canvas.getContext("2d",{alpha:!1}):null,this.dpr=Math.max(1,window.devicePixelRatio||1),this.minScale=.03,this.maxScale=8,this.defaultViewSize=1200,this.viewportStorageKey=`sketch_viewport_${this.roomId}`,this.savedViewport=this.loadSavedViewport(),this.hasAppliedInitialViewport=!1,this.shouldAutoFitLoadedContent=!this.savedViewport,this.viewportSaveTimer=null,this.contentBounds=null,this.peer=null,this.peerId=`sketch-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`,this.connections=new Map,this.pendingConnections=new Set,this.nickname=(localStorage.getItem("sketch_nickname")||"").trim(),this.peerColor=this.generateRandomColor(),this.strokes=new Map,this.liveRemoteStrokes=new Map,this.messages=[],this.members=new Map,this.remoteCursors=new Map,this.messageIds=new Set,this.currentColor="#111111",this.brushSize=4,this.interactionMode="draw",this.isEraser=!1,this.scale=1,this.offset={x:0,y:0},this.spacePressed=!1,this.isDrawing=!1,this.isPanning=!1,this.pointerId=null,this.activePointers=new Map,this.pinchState=null,this.panStart={x:0,y:0},this.currentStroke=null,this.myStrokeIds=[],this.redoStack=[],this.lastSeenMessageAt=0,this.lastCursorSentAt=0,this.lastCursorWorld=null,this.cursorSendTimer=null,this.pendingCursorWorld=null,this.lastStrokeBroadcastAt=0,this.sessionStarted=!1,this.lastStateSyncAt=0,this.actionQueue=[],this.isFlushingQueue=!1,this.queueTimer=null,this.discoveryTimer=null,this.heartbeatTimer=null,this.presenceTimer=null,this.zoomHoldTimer=null,this.zoomHoldDelayTimer=null,this.colorPicker=null,this.init()}init(){this.canvas&&this.ctx&&!this.expired&&this.roomId?(this.setupCanvas(),this.setupColorPicker(),this.setupEventListeners(),this.updateToolButtons(),this.updateUndoRedoButtons(),this.updateMembersUI(),this.checkIdentity()):this.hideLoader()}setupCanvas(){const t=()=>{const t=this.canvas.getBoundingClientRect(),e=Math.max(1,Math.round(t.width*this.dpr)),s=Math.max(1,Math.round(t.height*this.dpr)),i=0===this.canvas.width||0===this.canvas.height;this.canvas.width=e,this.canvas.height=s,i?this.applyInitialViewport():this.render()};window.addEventListener("resize",()=>window.requestAnimationFrame(t)),t()}setupEventListeners(){this.canvas.addEventListener("pointerdown",t=>this.onPointerDown(t)),this.canvas.addEventListener("pointermove",t=>{null!==this.pointerId||this.pinchState||this.scheduleCursorSync(this.normalizePoint(this.screenToWorld(this.getCanvasPoint(t))))}),window.addEventListener("pointermove",t=>this.onPointerMove(t)),window.addEventListener("pointerup",t=>this.onPointerUp(t)),window.addEventListener("pointercancel",t=>this.onPointerUp(t)),this.canvas.addEventListener("wheel",t=>{t.preventDefault();const e=t.deltaY<0?1.12:.88;this.zoomAt(e,this.getCanvasPoint(t))},{passive:!1}),this.canvas.addEventListener("contextmenu",t=>t.preventDefault()),window.addEventListener("blur",()=>{this.finishInteraction(),this.stopContinuousZoom()}),window.addEventListener("beforeunload",()=>this.leaveRoom()),window.addEventListener("keydown",t=>{if("input"===(t.target.tagName||"").toLowerCase())return;const e=t.key.toLowerCase();" "===e&&(this.spacePressed=!0),"f"===e&&(t.preventDefault(),this.fitView()),"1"===e&&(this.interactionMode="draw",this.isEraser=!1,this.updateToolButtons()),"2"===e&&(this.interactionMode="pan",this.isEraser=!1,this.updateToolButtons()),"e"===e&&(this.interactionMode="draw",this.isEraser=!this.isEraser,this.updateToolButtons()),(t.ctrlKey||t.metaKey)&&"z"===e&&(t.preventDefault(),this.undoAction()),(t.ctrlKey||t.metaKey)&&"y"===e&&(t.preventDefault(),this.redoAction()),"["===e&&(t.preventDefault(),this.setBrushSize(this.brushSize-1)),"]"===e&&(t.preventDefault(),this.setBrushSize(this.brushSize+1))}),window.addEventListener("keyup",t=>{" "===t.key&&(this.spacePressed=!1)}),document.getElementById("mode-toggle").addEventListener("click",()=>{this.interactionMode="pan"===this.interactionMode?"draw":"pan",this.isEraser=!1,this.updateToolButtons()}),document.getElementById("draw-mode-btn").addEventListener("click",()=>{this.interactionMode="draw",this.isEraser=!1,this.updateToolButtons()}),document.getElementById("eraser-btn").addEventListener("click",()=>{this.interactionMode="draw",this.isEraser=!this.isEraser,this.updateToolButtons()}),document.getElementById("undo-btn").addEventListener("click",()=>this.undoAction()),document.getElementById("redo-btn").addEventListener("click",()=>this.redoAction()),document.getElementById("clear-btn").addEventListener("click",()=>this.clearBoard()),document.getElementById("export-btn").addEventListener("click",()=>this.handleExport()),this.setupHoldZoom(document.getElementById("zoom-in"),1.12,1.035),this.setupHoldZoom(document.getElementById("zoom-out"),.88,.965),document.getElementById("fit-view").addEventListener("click",()=>this.fitView()),document.getElementById("copy-link-btn").addEventListener("click",async()=>{const t=document.getElementById("copy-link-btn");try{const c=this.roomId.startsWith("sk-")?this.roomId.slice(3):this.roomId;await navigator.clipboard.writeText(c),t.textContent="COPIED"}catch(e){t.textContent="FAILED"}window.setTimeout(()=>{t.textContent="COPY"},1800)}),document.getElementById("chat-btn").addEventListener("click",()=>{document.getElementById("chat-widget").classList.toggle("hidden"),document.getElementById("chat-dot").classList.add("hidden")}),document.getElementById("close-chat").addEventListener("click",()=>{document.getElementById("chat-widget").classList.add("hidden")}),document.getElementById("chat-form").addEventListener("submit",t=>{t.preventDefault(),this.sendChatMessage()}),document.querySelector(".connection-pill").addEventListener("click",()=>{this.updateMembersUI(),document.getElementById("members-modal").classList.remove("hidden")}),document.getElementById("close-members").addEventListener("click",()=>{document.getElementById("members-modal").classList.add("hidden")}),this.setupSizePicker()}setupColorPicker(){const t=document.getElementById("color-picker"),e=document.getElementById("color-picker-trigger"),s=document.getElementById("color-swatch"),i=document.getElementById("color-picker-popover"),n=document.getElementById("color-picker-widget");if(!(t&&e&&s&&i&&n))return;const o=e=>{this.setBrushColor(e),t.value=this.currentColor,s.style.background=this.currentColor};o(this.currentColor);const r=()=>this.colorPicker||!window.iro||"function"!=typeof window.iro.ColorPicker?Boolean(this.colorPicker):(this.colorPicker=new window.iro.ColorPicker(n,{width:180,color:this.currentColor,borderWidth:3,borderColor:"#111111",layout:[{component:window.iro.ui.Wheel},{component:window.iro.ui.Slider,options:{sliderType:"value"}}]}),this.colorPicker.on("color:change",t=>{o(t.hexString)}),!0);if(!window.iro||"function"!=typeof window.iro.ColorPicker)return t.hidden=!1,e.addEventListener("click",()=>t.click()),void t.addEventListener("input",t=>o(t.target.value));const a=()=>{const t=document.getElementById("main-tools");if(!t)return;const s=t.getBoundingClientRect(),n=e.getBoundingClientRect(),o=window.matchMedia("(max-width: 600px)").matches,r=o?176:184,a=Math.max(12,Math.min(window.innerWidth-r-12,n.left+n.width/2-r/2));if(i.style.left=`${a}px`,o){const t=Math.max(12,s.top-i.offsetHeight-10);i.style.top=`${t}px`}else i.style.top=`${s.bottom+10}px`},h=()=>{i.classList.add("open"),i.setAttribute("aria-hidden","false"),r()&&window.requestAnimationFrame(()=>{this.colorPicker&&"function"==typeof this.colorPicker.resize&&this.colorPicker.resize(window.matchMedia("(max-width: 600px)").matches?142:150),this.colorPicker&&this.colorPicker.color&&(this.colorPicker.color.hexString=this.currentColor),a()})},d=()=>{i.classList.remove("open"),i.setAttribute("aria-hidden","true")};e.addEventListener("click",t=>{t.preventDefault(),i.classList.contains("open")?d():h()}),t.addEventListener("input",t=>o(t.target.value)),document.addEventListener("pointerdown",t=>{i.classList.contains("open")&&(i.contains(t.target)||e.contains(t.target)||d())}),window.addEventListener("keydown",t=>{"Escape"===t.key&&d()}),window.addEventListener("resize",()=>{i.classList.contains("open")&&window.requestAnimationFrame(a)}),window.addEventListener("scroll",()=>{i.classList.contains("open")&&window.requestAnimationFrame(a)},!0)}setBrushColor(t){this.currentColor=String(t||"#111111").toUpperCase();const e=document.getElementById("size-preview"),s=document.getElementById("color-swatch"),i=document.getElementById("color-picker");e&&(e.style.background=this.currentColor),s&&(s.style.background=this.currentColor),i&&i.value!==this.currentColor&&(i.value=this.currentColor)}setupSizePicker(){const t=document.getElementById("size-toggle"),e=document.getElementById("size-picker-popover"),s=document.getElementById("size-slider");if(!t||!e||!s)return;window.noUiSlider&&!s.noUiSlider&&window.noUiSlider.create(s,{start:this.brushSize,step:1,connect:[!0,!1],range:{min:1,max:100},tooltips:{to:t=>`${Math.round(t)}`,from:t=>Number(t)}});const i=()=>{const s=document.getElementById("main-tools");if(!s)return;const i=s.getBoundingClientRect(),n=t.getBoundingClientRect(),o=window.matchMedia("(max-width: 600px)").matches,r=o?176:184,a=Math.max(12,Math.min(window.innerWidth-r-12,n.left+n.width/2-r/2));e.style.left=`${a}px`,e.style.top=o?`${Math.max(12,i.top-e.offsetHeight-10)}px`:`${i.bottom+10}px`},n=()=>{e.classList.add("open"),e.setAttribute("aria-hidden","false"),window.requestAnimationFrame(()=>{if(i(),s.noUiSlider){s.noUiSlider.set(this.brushSize);const t=s.querySelector(".noUi-handle");t?.focus({preventScroll:!0})}})},o=()=>{e.contains(document.activeElement)&&t.focus({preventScroll:!0}),e.classList.remove("open"),e.setAttribute("aria-hidden","true")};t.addEventListener("click",t=>{t.preventDefault(),e.classList.contains("open")?o():n()}),s.noUiSlider&&s.noUiSlider.on("update",t=>{this.setBrushSize(t[0],!1)}),document.addEventListener("pointerdown",s=>{e.classList.contains("open")&&(e.contains(s.target)||t.contains(s.target)||o())}),window.addEventListener("keydown",t=>{"Escape"===t.key&&o()}),window.addEventListener("resize",()=>{e.classList.contains("open")&&window.requestAnimationFrame(i)}),window.addEventListener("scroll",()=>{e.classList.contains("open")&&window.requestAnimationFrame(i)},!0),this.setBrushSize(this.brushSize)}setBrushSize(t){const e=Math.max(1,Math.min(100,parseInt(t,10)||1));this.brushSize=e;const s=document.getElementById("size-preview"),i=document.getElementById("size-preview-value"),n=document.getElementById("size-slider");if(s){const t=4+(this.brushSize-1)/99*30;s.style.width=`${t}px`,s.style.height=`${t}px`,s.style.background=this.currentColor}if(i&&(i.textContent=String(this.brushSize)),n&&n.noUiSlider){Number(n.noUiSlider.get())!==this.brushSize&&n.noUiSlider.set(this.brushSize)}}setupHoldZoom(t,e,s){if(!t)return;const i=()=>this.stopContinuousZoom();t.addEventListener("pointerdown",t=>{t.preventDefault(),this.stopContinuousZoom(),this.zoomAt(e,this.getCanvasCenterPoint()),this.zoomHoldDelayTimer=window.setTimeout(()=>{this.zoomHoldTimer=window.setInterval(()=>{this.zoomAt(s,this.getCanvasCenterPoint())},60)},220)}),t.addEventListener("pointerup",i),t.addEventListener("pointercancel",i),t.addEventListener("pointerleave",i),t.addEventListener("lostpointercapture",i)}stopContinuousZoom(){window.clearTimeout(this.zoomHoldDelayTimer),window.clearInterval(this.zoomHoldTimer),this.zoomHoldDelayTimer=null,this.zoomHoldTimer=null}getCanvasCenterPoint(){return{x:this.canvas.width/2,y:this.canvas.height/2}}checkIdentity(){const t=document.getElementById("name-modal"),e=document.getElementById("user-nickname"),s=document.getElementById("join-btn");if(this.nickname)return e.value=this.nickname,t.classList.add("hidden"),void this.startSession();t.classList.remove("hidden"),this.hideLoader(),e.focus();const i=()=>{const s=e.value.trim();s?(this.nickname=s.slice(0,20),localStorage.setItem("sketch_nickname",this.nickname),t.classList.add("hidden"),this.startSession()):e.focus()};s.addEventListener("click",i),e.addEventListener("keydown",t=>{"Enter"===t.key&&(t.preventDefault(),i())})}async startSession(){this.sessionStarted||(this.sessionStarted=!0,await this.loadPersistentState(),this.initPeer())}initPeer(){if("function"!=typeof Peer)return this.setConnectionStatus(!1),this.hideLoader(),void window.alert("PeerJS failed to load.");this.peer=new Peer(this.peerId,{debug:1,config:{iceServers:[{urls:"stun:stun.l.google.com:19302"}]}}),this.peer.on("open",async()=>{await this.syncPresence("join"),await this.fetchPresence(),this.startLoops(),this.setConnectionStatus(!0),this.hideLoader(),this.intro&&window.history.replaceState({},"",window.location.pathname)}),this.peer.on("connection",t=>this.setupConnection(t)),this.peer.on("error",t=>{console.warn("[PeerJS]",t),this.setConnectionStatus(!1)}),this.peer.on("disconnected",()=>{this.setConnectionStatus(!1),this.peer.reconnect()})}startLoops(){this.queueTimer=window.setInterval(()=>this.flushActionQueue(),2e3),this.discoveryTimer=window.setInterval(()=>this.fetchPresence(),5e3),this.heartbeatTimer=window.setInterval(()=>this.syncPresence("heartbeat"),15e3),this.presenceTimer=window.setInterval(()=>this.broadcastCursor(!0),1200)}async fetchPresence(){try{const t=await this.requestJson(`${this.sigUrl}?room=${encodeURIComponent(this.roomId)}&_=${Date.now()}`);if(!t.ok)throw new Error(t.error||"Presence failed");const e=Array.isArray(t.peers)?t.peers:[];this.updateMembersFromPresence(e),e.forEach(t=>{t&&t.id&&t.id!==this.peerId&&!this.connections.has(t.id)&&!this.pendingConnections.has(t.id)&&this.connectToPeer(t.id)}),this.setConnectionStatus(!0)}catch(t){this.setConnectionStatus(!1)}}updateMembersFromPresence(t){this.members=new Map,t.forEach(t=>{t&&t.id&&this.members.set(t.id,{id:t.id,name:t.name||"Guest",color:t.color||"#7D5FFF",cursor:t.cursor||null})}),this.members.has(this.peerId)||this.members.set(this.peerId,{id:this.peerId,name:this.nickname,color:this.peerColor,cursor:this.lastCursorWorld}),this.renderRemoteCursors(),this.updateMembersUI()}async syncPresence(t){const e={action:t,id:this.peerId,name:this.nickname,color:this.peerColor,cursor:this.lastCursorWorld};if("leave"===t&&navigator.sendBeacon)try{if(navigator.sendBeacon(`${this.sigUrl}?room=${encodeURIComponent(this.roomId)}`,new Blob([JSON.stringify(e)],{type:"application/json"})))return}catch(t){}try{await this.requestJson(`${this.sigUrl}?room=${encodeURIComponent(this.roomId)}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(e),keepalive:"leave"===t})}catch(t){}}connectToPeer(t){if(!this.peer||this.connections.has(t)||this.pendingConnections.has(t))return;this.pendingConnections.add(t);const e=this.peer.connect(t,{reliable:!0});this.setupConnection(e)}setupConnection(t){t.on("open",()=>{this.pendingConnections.delete(t.peer),this.connections.set(t.peer,t),this.sendTo(t.peer,{type:"identity",id:this.peerId,name:this.nickname,color:this.peerColor}),this.sendFullState(t.peer),this.updateMembersUI()}),t.on("data",e=>this.handlePeerData(t.peer,e));const e=()=>{this.pendingConnections.delete(t.peer),this.connections.get(t.peer)===t&&this.connections.delete(t.peer),this.liveRemoteStrokes.forEach((e,s)=>{e.owner===t.peer&&this.liveRemoteStrokes.delete(s)}),this.render(),this.updateMembersUI()};t.on("close",e),t.on("error",e)}handlePeerData(t,e){if(!e||!e.type)return;const s={identity:()=>{this.members.set(t,{id:t,name:e.name||"Guest",color:e.color||"#7D5FFF",cursor:null}),this.updateMembersUI()},"full-state":()=>{(e.sentAt||0)<this.lastStateSyncAt||(this.lastStateSyncAt=e.sentAt||Date.now(),this.applyFullState(e.state||{}))},"stroke-live":()=>{e.stroke&&e.stroke.id&&(this.liveRemoteStrokes.set(e.stroke.id,e.stroke),this.render())},"stroke-final":()=>{e.stroke&&e.stroke.id&&(this.liveRemoteStrokes.delete(e.stroke.id),this.strokes.set(e.stroke.id,e.stroke),this.contentBounds=this.calculateStrokeBounds(),this.render())},"stroke-remove":()=>{this.liveRemoteStrokes.delete(e.strokeId),this.strokes.delete(e.strokeId),this.contentBounds=this.calculateStrokeBounds(),this.render()},"board-clear":()=>{this.strokes.clear(),this.liveRemoteStrokes.clear(),this.redoStack=[],this.contentBounds=null,this.render(),this.updateUndoRedoButtons()},cursor:()=>{const s=this.members.get(t);s&&(s.cursor=e.cursor||null,this.renderRemoteCursors())},chat:()=>{e.message&&!this.messageIds.has(e.message.id)&&(this.messages.push(e.message),this.messages=this.messages.slice(-60),this.renderChatMessages())}};s[e.type]&&s[e.type]()}sendTo(t,e){const s=this.connections.get(t);s&&s.open&&s.send(e)}broadcast(t){this.connections.forEach(e=>{e.open&&e.send(t)})}sendFullState(t){this.sendTo(t,{type:"full-state",sentAt:Date.now(),state:{strokes:Array.from(this.strokes.values()),messages:this.messages.slice(-60),meta:{bounds:this.contentBounds||this.calculateStrokeBounds()}}})}applyFullState(t){const e=new Map;(Array.isArray(t.strokes)?t.strokes:[]).filter(t=>t&&t.id&&Array.isArray(t.points)).sort((t,e)=>Number(t.createdAt||0)-Number(e.createdAt||0)).forEach(t=>e.set(t.id,t)),this.strokes=e,this.messages=Array.isArray(t.messages)?t.messages.slice(-60):[],this.contentBounds=this.normalizeBounds(t.meta?.bounds)||this.calculateStrokeBounds(),this.render(),this.renderChatMessages(),this.updateUndoRedoButtons(),!this.hasAppliedInitialViewport&&this.canvas.width>0&&this.canvas.height>0?this.applyInitialViewport():this.shouldAutoFitLoadedContent&&this.contentBounds&&(this.shouldAutoFitLoadedContent=!1,this.fitView())}async loadPersistentState(){try{const t=await this.requestJson(`${this.storeUrl}?room=${encodeURIComponent(this.roomId)}&_=${Date.now()}`);if(!t.ok||!t.state)return;this.applyFullState(t.state)}catch(t){}}enqueueAction(t){t&&t.action&&("clear"===t.action?this.actionQueue=[t]:"upsert-stroke"===t.action&&t.stroke?.id?(this.actionQueue=this.actionQueue.filter(e=>{if(!e)return!1;if("clear"===e.action)return!0;if("upsert-stroke"===e.action||"remove-stroke"===e.action){return(e.stroke?.id||e.strokeId)!==t.stroke.id}return!0}),this.actionQueue.push(t)):"remove-stroke"===t.action&&t.strokeId?(this.actionQueue=this.actionQueue.filter(e=>{if(!e)return!1;if("clear"===e.action)return!0;if("upsert-stroke"===e.action||"remove-stroke"===e.action){return(e.stroke?.id||e.strokeId)!==t.strokeId}return!0}),this.actionQueue.push(t)):"add-message"===t.action&&t.message?.id&&this.actionQueue.some(e=>"add-message"===e?.action&&e.message?.id===t.message.id)||this.actionQueue.push(t),this.flushActionQueue())}async flushActionQueue(){if(!this.isFlushingQueue&&0!==this.actionQueue.length){for(this.isFlushingQueue=!0;this.actionQueue.length>0;){const t=this.actionQueue.slice(0,24);try{await this.requestJson(`${this.storeUrl}?room=${encodeURIComponent(this.roomId)}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"batch",actions:t})}),this.actionQueue.splice(0,t.length)}catch(t){break}}this.isFlushingQueue=!1}}requestJson(t,e={}){return fetch(t,{cache:"no-store",credentials:"same-origin",...e}).then(async t=>{const e=await t.text(),s=e?JSON.parse(e):{};return t.ok?s:{ok:!1,error:s.error||`HTTP ${t.status}`}})}hideLoader(){const t=document.getElementById("page-loader");t&&t.classList.add("hidden")}getCanvasPoint(t){return this.getCanvasPointFromClient(t.clientX,t.clientY)}getCanvasPointFromClient(t,e){const s=this.canvas.getBoundingClientRect();return{x:(t-s.left)*this.dpr,y:(e-s.top)*this.dpr}}screenToWorld(t){return{x:(t.x-this.offset.x)/(this.scale*this.dpr),y:(t.y-this.offset.y)/(this.scale*this.dpr)}}worldToScreen(t){return{x:t.x*this.scale+this.offset.x/this.dpr,y:t.y*this.scale+this.offset.y/this.dpr}}normalizePoint(t){if(!t)return null;const e=Number(t.x),s=Number(t.y);return Number.isFinite(e)&&Number.isFinite(s)?{x:Math.max(-1e6,Math.min(1e6,Number(e.toFixed(2)))),y:Math.max(-1e6,Math.min(1e6,Number(s.toFixed(2))))}:null}normalizeBounds(t){if(!t)return null;const e=Number(t.minX),s=Number(t.minY),i=Number(t.maxX),n=Number(t.maxY);return![e,s,i,n].every(Number.isFinite)||e>i||s>n?null:{minX:e,minY:s,maxX:i,maxY:n}}loadSavedViewport(){try{const t=localStorage.getItem(this.viewportStorageKey);if(!t)return null;const e=JSON.parse(t);return e&&Number.isFinite(e.scale)&&Number.isFinite(e.offsetX)&&Number.isFinite(e.offsetY)?{scale:e.scale,offsetX:e.offsetX,offsetY:e.offsetY}:null}catch(t){return null}}applyInitialViewport(){if(this.hasAppliedInitialViewport)return;if(this.hasAppliedInitialViewport=!0,this.savedViewport)return this.scale=Math.max(this.minScale,Math.min(this.savedViewport.scale,this.maxScale)),this.offset.x=this.savedViewport.offsetX,this.offset.y=this.savedViewport.offsetY,void this.render();(this.contentBounds||this.calculateStrokeBounds())&&(this.shouldAutoFitLoadedContent=!1),this.fitView()}scheduleViewportSave(){window.clearTimeout(this.viewportSaveTimer),this.viewportSaveTimer=window.setTimeout(()=>{try{localStorage.setItem(this.viewportStorageKey,JSON.stringify({scale:Number(this.scale.toFixed(4)),offsetX:Math.round(this.offset.x),offsetY:Math.round(this.offset.y)}))}catch(t){}},120)}getDefaultBounds(){const t=this.defaultViewSize/2;return{minX:-t,minY:-t,maxX:t,maxY:t}}calculateStrokeBounds(t=null){let e=null;return(t?[...this.strokes.values(),t]:Array.from(this.strokes.values())).forEach(t=>{const s=this.getStrokeBounds(t);s&&(e=e?{minX:Math.min(e.minX,s.minX),minY:Math.min(e.minY,s.minY),maxX:Math.max(e.maxX,s.maxX),maxY:Math.max(e.maxY,s.maxY)}:s)}),e}getStrokeBounds(t){if(!t||!Array.isArray(t.points)||0===t.points.length)return null;let e=null;const s=Math.max(1,Number(t.size)||1);return t.points.forEach(t=>{const i=this.normalizePoint(t);if(!i)return;const n={minX:i.x-s,minY:i.y-s,maxX:i.x+s,maxY:i.y+s};e=e?{minX:Math.min(e.minX,n.minX),minY:Math.min(e.minY,n.minY),maxX:Math.max(e.maxX,n.maxX),maxY:Math.max(e.maxY,n.maxY)}:n}),e}getTouchPointers(){return Array.from(this.activePointers.values()).filter(t=>"touch"===t.pointerType)}startPinchGesture(){const t=this.getTouchPointers();if(t.length<2)return;this.finishInteraction();const[e,s]=t,i=this.getCanvasPointFromClient(e.clientX,e.clientY),n=this.getCanvasPointFromClient(s.clientX,s.clientY),o={x:(i.x+n.x)/2,y:(i.y+n.y)/2};this.pinchState={initialDistance:Math.max(1,Math.hypot(n.x-i.x,n.y-i.y)),initialScale:this.scale,worldAtMidpoint:this.screenToWorld(o)}}updatePinchGesture(){const t=this.getTouchPointers();if(t.length<2||!this.pinchState)return;const[e,s]=t,i=this.getCanvasPointFromClient(e.clientX,e.clientY),n=this.getCanvasPointFromClient(s.clientX,s.clientY),o=(i.x+n.x)/2,r=(i.y+n.y)/2,a=Math.max(1,Math.hypot(n.x-i.x,n.y-i.y)),h=Math.max(this.minScale,Math.min(this.pinchState.initialScale*(a/this.pinchState.initialDistance),this.maxScale));this.scale=h,this.offset.x=o-this.pinchState.worldAtMidpoint.x*this.scale*this.dpr,this.offset.y=r-this.pinchState.worldAtMidpoint.y*this.scale*this.dpr,this.render()}onPointerDown(t){if(t.target!==this.canvas)return;if(this.activePointers.set(t.pointerId,{pointerId:t.pointerId,pointerType:t.pointerType,clientX:t.clientX,clientY:t.clientY}),"touch"===t.pointerType&&this.getTouchPointers().length>=2)return this.startPinchGesture(),void t.preventDefault();const e=this.getCanvasPoint(t);if("pan"===this.interactionMode||this.spacePressed||1===t.button||2===t.button)return this.isPanning=!0,this.pointerId=t.pointerId,this.panStart={x:e.x-this.offset.x,y:e.y-this.offset.y},this.canvas.setPointerCapture(t.pointerId),void t.preventDefault();if(0!==t.button)return;const s=this.normalizePoint(this.screenToWorld(e));if(!s)return;const i=this.isEraser?"#FFFFFF":this.currentColor;this.isDrawing=!0,this.pointerId=t.pointerId,this.currentStroke={id:`stroke-${this.peerId}-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,owner:this.peerId,color:i,size:this.brushSize,points:[s],createdAt:Date.now()},this.canvas.setPointerCapture(t.pointerId),this.lastStrokeBroadcastAt=0,this.broadcastLiveStroke(),this.scheduleCursorSync(s),this.render(),t.preventDefault()}onPointerMove(t){if(this.activePointers.has(t.pointerId)&&this.activePointers.set(t.pointerId,{pointerId:t.pointerId,pointerType:t.pointerType,clientX:t.clientX,clientY:t.clientY}),this.pinchState&&"touch"===t.pointerType)return this.updatePinchGesture(),void t.preventDefault();if(this.pointerId!==t.pointerId)return;const e=this.getCanvasPoint(t);if(this.isPanning)return this.offset.x=e.x-this.panStart.x,this.offset.y=e.y-this.panStart.y,this.scheduleCursorSync(this.normalizePoint(this.screenToWorld(e))),this.render(),void t.preventDefault();if(!this.isDrawing||!this.currentStroke)return void this.scheduleCursorSync(this.normalizePoint(this.screenToWorld(e)));const s=this.normalizePoint(this.screenToWorld(e));if(!s)return;const i=this.currentStroke.points[this.currentStroke.points.length-1];Math.hypot(s.x-i.x,s.y-i.y)<.5||(this.currentStroke.points.push(s),this.broadcastLiveStroke(),this.scheduleCursorSync(s),this.render(),t.preventDefault())}onPointerUp(t){if(this.activePointers.delete(t.pointerId),this.pinchState&&"touch"===t.pointerType)return this.getTouchPointers().length<2&&(this.pinchState=null,this.scheduleViewportSave()),void t.preventDefault();if(this.pointerId!==t.pointerId)return;if(this.isPanning)return void this.finishInteraction();if(!this.isDrawing||!this.currentStroke)return void this.finishInteraction();const e=this.currentStroke;this.isDrawing=!1,this.currentStroke=null,this.pointerId=null,this.strokes.set(e.id,e),this.liveRemoteStrokes.delete(e.id),this.myStrokeIds.push(e.id),this.redoStack=[],this.scheduleCursorSync(e.points[e.points.length-1]),this.broadcast({type:"stroke-final",stroke:e}),this.enqueueAction({action:"upsert-stroke",stroke:e}),this.contentBounds=this.calculateStrokeBounds(),this.render(),this.updateUndoRedoButtons()}finishInteraction(){this.isDrawing=!1,this.isPanning=!1,this.pointerId=null,this.currentStroke=null,this.scheduleViewportSave()}fitView(){const t=this.contentBounds||this.calculateStrokeBounds()||this.getDefaultBounds(),e=Math.max(120,t.maxX-t.minX),s=Math.max(120,t.maxY-t.minY),i=Math.max(1,this.canvas.width/this.dpr-160),n=Math.max(1,this.canvas.height/this.dpr-160);this.scale=Math.max(this.minScale,Math.min(Math.min(i/e,n/s),this.maxScale));const o=(t.minX+t.maxX)/2,r=(t.minY+t.maxY)/2;this.offset.x=(this.canvas.width/this.dpr/2-o*this.scale)*this.dpr,this.offset.y=(this.canvas.height/this.dpr/2-r*this.scale)*this.dpr,this.render(),this.scheduleViewportSave()}zoomAt(t,e){const s=this.scale;this.scale=Math.max(this.minScale,Math.min(this.scale*t,this.maxScale)),s!==this.scale&&(this.offset.x=e.x-(e.x-this.offset.x)*this.scale/s,this.offset.y=e.y-(e.y-this.offset.y)*this.scale/s,this.render(),this.scheduleViewportSave())}render(){const t=this.ctx;t.setTransform(1,0,0,1,0,0),t.fillStyle="#fdfaf2",t.fillRect(0,0,this.canvas.width,this.canvas.height),this.renderBackground(t),t.setTransform(this.scale*this.dpr,0,0,this.scale*this.dpr,this.offset.x,this.offset.y);for(const e of this.strokes.values())this.drawStroke(t,e);for(const e of this.liveRemoteStrokes.values())this.drawStroke(t,e);this.currentStroke&&this.drawStroke(t,this.currentStroke),this.renderRemoteCursors()}renderBackground(t){const e=this.getGridSpacing(),s=5*e,i={minX:this.screenToWorld({x:0,y:0}).x,minY:this.screenToWorld({x:0,y:0}).y,maxX:this.screenToWorld({x:this.canvas.width,y:this.canvas.height}).x,maxY:this.screenToWorld({x:this.canvas.width,y:this.canvas.height}).y};t.setTransform(this.scale*this.dpr,0,0,this.scale*this.dpr,this.offset.x,this.offset.y);const n=(e,s,n=1)=>{const o=Math.floor(i.minX/e)*e,r=Math.ceil(i.maxX/e)*e,a=Math.floor(i.minY/e)*e,h=Math.ceil(i.maxY/e)*e;t.beginPath(),t.strokeStyle=s,t.lineWidth=n/(this.scale*this.dpr);for(let s=o;s<=r;s+=e)t.moveTo(s,a),t.lineTo(s,h);for(let s=a;s<=h;s+=e)t.moveTo(o,s),t.lineTo(r,s);t.stroke()};n(e,"#eadabe"),n(s,"#d4c4a8",1.5),t.beginPath(),t.strokeStyle="#ff9e9e",t.lineWidth=2/(this.scale*this.dpr),t.moveTo(0,i.minY),t.lineTo(0,i.maxY),t.moveTo(i.minX,0),t.lineTo(i.maxX,0),t.stroke()}getGridSpacing(){const t=44/Math.max(this.scale,1e-4);return[10,25,50,100,250,500,1e3,2500,5e3,1e4].find(e=>e>=t)||25e3}drawStroke(t,e){if(!e||!Array.isArray(e.points)||0===e.points.length)return;if(t.strokeStyle=e.color,t.lineWidth=e.size,t.lineCap="round",t.lineJoin="round",t.beginPath(),t.moveTo(e.points[0].x,e.points[0].y),1===e.points.length)return t.lineTo(e.points[0].x+.01,e.points[0].y+.01),void t.stroke();if(2===e.points.length)return t.lineTo(e.points[1].x,e.points[1].y),void t.stroke();for(let s=1;s<e.points.length-2;s+=1){const i=e.points[s],n=e.points[s+1],o=(i.x+n.x)/2,r=(i.y+n.y)/2;t.quadraticCurveTo(i.x,i.y,o,r)}const s=e.points[e.points.length-2],i=e.points[e.points.length-1];t.quadraticCurveTo(s.x,s.y,i.x,i.y),t.stroke()}broadcastLiveStroke(){if(!this.currentStroke)return;const t=Date.now();t-this.lastStrokeBroadcastAt<16||(this.lastStrokeBroadcastAt=t,this.broadcast({type:"stroke-live",stroke:this.currentStroke}))}undoAction(){if(!this.isDrawing)for(;this.myStrokeIds.length>0;){const t=this.myStrokeIds.pop(),e=this.strokes.get(t);if(e)return this.strokes.delete(t),this.redoStack.push(e),this.contentBounds=this.calculateStrokeBounds(),this.broadcast({type:"stroke-remove",strokeId:t}),this.enqueueAction({action:"remove-stroke",strokeId:t}),this.render(),void this.updateUndoRedoButtons()}}redoAction(){if(this.isDrawing||0===this.redoStack.length)return;const t=this.redoStack.pop();this.strokes.set(t.id,t),this.myStrokeIds.push(t.id),this.contentBounds=this.calculateStrokeBounds(),this.broadcast({type:"stroke-final",stroke:t}),this.enqueueAction({action:"upsert-stroke",stroke:t}),this.render(),this.updateUndoRedoButtons()}clearBoard(){window.confirm("Clear the whole board for everyone?")&&(this.strokes.clear(),this.liveRemoteStrokes.clear(),this.myStrokeIds=[],this.redoStack=[],this.contentBounds=null,this.broadcast({type:"board-clear"}),this.enqueueAction({action:"clear"}),this.render(),this.updateUndoRedoButtons())}handleExport(){if(0===this.strokes.size)return void window.alert("The board is empty. Draw something first.");const t=this.findStrokeBounds(),e=Math.max(1,Math.ceil(t.maxX-t.minX+80)),s=Math.max(1,Math.ceil(t.maxY-t.minY+80)),i=Math.min(1,4096/Math.max(e,s)),n=Math.max(1,Math.round(e*i)),o=Math.max(1,Math.round(s*i)),r=document.createElement("canvas");r.width=n,r.height=o;const a=r.getContext("2d",{alpha:!1});a.fillStyle="#FFFFFF",a.fillRect(0,0,n,o),a.scale(i,i),a.translate(40-t.minX,40-t.minY);for(const t of this.strokes.values())this.drawStroke(a,t);const h=document.createElement("a");h.download=`sketch-${this.roomId}-${Date.now()}.png`,h.href=r.toDataURL("image/png"),h.click()}findStrokeBounds(){return this.contentBounds||this.calculateStrokeBounds()||this.getDefaultBounds()}sendChatMessage(){const t=document.getElementById("chat-input"),e=t.value.trim();if(!e)return;const s={id:`msg-${this.peerId}-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,name:this.nickname,text:e.slice(0,400),createdAt:Date.now()};this.messages.push(s),this.messages=this.messages.slice(-60),this.broadcast({type:"chat",message:s}),this.enqueueAction({action:"add-message",message:s}),this.renderChatMessages(),t.value="",document.getElementById("chat-dot").classList.add("hidden")}renderChatMessages(){const t=document.getElementById("chat-messages");if(!t)return;const e=this.messageIds.size;t.innerHTML="",this.messageIds=new Set,this.messages.slice().sort((t,e)=>Number(t.createdAt||0)-Number(e.createdAt||0)).forEach(e=>{if(!e||!e.id)return;this.messageIds.add(e.id);const s=e.name===this.nickname,i=document.createElement("div");i.className="msg "+(s?"sent":"received"),i.innerHTML=`<div class="msg-author">${this.escapeHtml(e.name||"Guest")}</div><div>${this.escapeHtml(e.text||"")}</div>`,t.appendChild(i)}),t.scrollTop=t.scrollHeight;const s=this.messages[this.messages.length-1],i=document.getElementById("chat-widget").classList.contains("hidden");s&&i&&s.name!==this.nickname&&this.messages.length>=e&&Number(s.createdAt||0)>this.lastSeenMessageAt&&document.getElementById("chat-dot").classList.remove("hidden"),s&&(this.lastSeenMessageAt=Math.max(this.lastSeenMessageAt,Number(s.createdAt||0)))}scheduleCursorSync(t){if(!t)return;if(this.lastCursorWorld){const e=t.x-this.lastCursorWorld.x,s=t.y-this.lastCursorWorld.y;if(Math.hypot(e,s)<6)return}this.pendingCursorWorld=t;const e=Date.now()-this.lastCursorSentAt;e>=24?this.flushCursorSync():(window.clearTimeout(this.cursorSendTimer),this.cursorSendTimer=window.setTimeout(()=>this.flushCursorSync(),24-e))}flushCursorSync(){if(!this.pendingCursorWorld)return;this.lastCursorSentAt=Date.now(),this.lastCursorWorld=this.pendingCursorWorld;const t=this.pendingCursorWorld;this.pendingCursorWorld=null;const e=this.members.get(this.peerId);e&&(e.cursor=t),this.broadcast({type:"cursor",cursor:t})}broadcastCursor(t=!1){t?this.lastCursorWorld&&this.broadcast({type:"cursor",cursor:this.lastCursorWorld}):this.flushCursorSync()}renderRemoteCursors(){const t=document.getElementById("cursors-container");if(!t)return;const e=new Set;this.members.forEach((s,i)=>{if(i===this.peerId||!s.cursor)return;e.add(i);let n=this.remoteCursors.get(i);if(!n){const e=document.createElement("div");e.className="remote-cursor";const s=document.createElement("div");s.className="cursor-label",e.appendChild(s),t.appendChild(e),n={element:e,label:s},this.remoteCursors.set(i,n)}n.element.style.background=s.color||"#7D5FFF",n.label.textContent=s.name||"Guest";const o=this.worldToScreen(s.cursor);n.element.style.left=`${o.x}px`,n.element.style.top=`${o.y}px`}),this.remoteCursors.forEach((t,s)=>{e.has(s)||(t.element.remove(),this.remoteCursors.delete(s))})}updateMembersUI(){const t=document.getElementById("members-list");if(!t)return;t.innerHTML="";const e=Array.from(this.members.values()).sort((t,e)=>t.id===this.peerId?-1:e.id===this.peerId?1:String(t.name||"").localeCompare(String(e.name||"")));e.forEach(e=>{const s=document.createElement("div");s.className="member-item",s.innerHTML=`<div class="member-color" style="background:${e.color||"#7D5FFF"}"></div><span>${this.escapeHtml(e.name||"Guest")}</span>${e.id===this.peerId?'<span class="member-you">YOU</span>':""}`,t.appendChild(s)}),document.getElementById("peer-count").textContent=String(Math.max(1,e.length||1))}setConnectionStatus(t){const e=document.getElementById("connection-status");e&&(e.classList.toggle("online",t),e.classList.toggle("offline",!t))}updateToolButtons(){document.getElementById("mode-toggle").classList.toggle("active","pan"===this.interactionMode),document.getElementById("draw-mode-btn").classList.toggle("active","draw"===this.interactionMode&&!this.isEraser),document.getElementById("eraser-btn").classList.toggle("active",this.isEraser)}updateUndoRedoButtons(){document.getElementById("undo-btn").style.opacity=this.myStrokeIds.length>0?"1":"0.35",document.getElementById("redo-btn").style.opacity=this.redoStack.length>0?"1":"0.35"}leaveRoom(){this.stopContinuousZoom(),window.clearTimeout(this.cursorSendTimer),window.clearTimeout(this.viewportSaveTimer),window.clearInterval(this.queueTimer),window.clearInterval(this.discoveryTimer),window.clearInterval(this.heartbeatTimer),window.clearInterval(this.presenceTimer),this.syncPresence("leave"),this.peer&&!this.peer.destroyed&&this.peer.destroy()}buildClientId(){return`client-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`}generateRandomColor(){const t=["#FF3366","#33FF99","#7D5FFF","#FFDE00","#FF8C00","#00D4FF"];return t[Math.floor(Math.random()*t.length)]}escapeHtml(t){return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;")}}window.SketchApp=SketchApp,window.addEventListener("load",()=>{new SketchApp});
+class SketchApp {
+    constructor() {
+        const config = window.SKETCH_CONFIG || {};
+        this.roomId = config.roomId || "";
+        this.assetBase = config.assetBase || "";
+        this.expired = Boolean(config.expired);
+        this.intro = Boolean(config.intro);
+        this.storeUrl = `${this.assetBase}/store.php`;
+        this.sigUrl = `${this.assetBase}/sig.php`;
+        this.canvas = document.getElementById("whiteboard");
+        this.ctx = this.canvas ? this.canvas.getContext("2d", { alpha: false }) : null;
+        this.dpr = Math.max(1, window.devicePixelRatio || 1);
+        this.minScale = 0.03;
+        this.maxScale = 8;
+        this.defaultViewSize = 1200;
+        this.viewportStorageKey = `sketch_viewport_${this.roomId}`;
+        this.savedViewport = this.loadSavedViewport();
+        this.hasAppliedInitialViewport = false;
+        this.shouldAutoFitLoadedContent = !this.savedViewport;
+        this.viewportSaveTimer = null;
+        this.contentBounds = null;
+        
+        this.peer = null;
+        this.peerId = `sketch-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+        this.connections = new Map();
+        this.pendingConnections = new Set();
+        this.nickname = (localStorage.getItem("sketch_nickname") || "").trim();
+        this.peerColor = this.generateRandomColor();
+        this.strokes = new Map();
+        this.liveRemoteStrokes = new Map();
+        this.messages = [];
+        this.members = new Map();
+        this.remoteCursors = new Map();
+        this.messageIds = new Set();
+        this.currentColor = "#111111";
+        this.brushSize = 4;
+        this.interactionMode = "draw";
+        this.isEraser = false;
+        this.scale = 1;
+        this.offset = { x: 0, y: 0 };
+        this.spacePressed = false;
+        this.isDrawing = false;
+        this.isPanning = false;
+        this.pointerId = null;
+        this.activePointers = new Map();
+        this.pinchState = null;
+        this.panStart = { x: 0, y: 0 };
+        this.currentStroke = null;
+        this.myStrokeIds = [];
+        this.redoStack = [];
+        this.lastSeenMessageAt = 0;
+        this.lastCursorSentAt = 0;
+        this.lastCursorWorld = null;
+        this.cursorSendTimer = null;
+        this.pendingCursorWorld = null;
+        this.lastStrokeBroadcastAt = 0;
+        this.sessionStarted = false;
+        this.lastStateSyncAt = 0;
+        this.actionQueue = [];
+        this.isFlushingQueue = false;
+        
+        // Timers
+        this.queueTimer = null;
+        this.discoveryTimer = null;
+        this.heartbeatTimer = null;
+        this.presenceTimer = null;
+        this.stateSyncTimer = null;
+        this.zoomHoldTimer = null;
+        this.zoomHoldDelayTimer = null;
+        this.colorPicker = null;
+        
+        // State tracking
+        this.localRevision = 0;
+        
+        this.init();
+    }
+
+    init() {
+        if (this.canvas && this.ctx && !this.expired && this.roomId) {
+            this.setupCanvas();
+            this.setupColorPicker();
+            this.setupEventListeners();
+            this.updateToolButtons();
+            this.updateUndoRedoButtons();
+            this.updateMembersUI();
+            this.checkIdentity();
+        } else {
+            this.hideLoader();
+        }
+    }
+
+    setupCanvas() {
+        const resize = () => {
+            const rect = this.canvas.getBoundingClientRect();
+            const w = Math.max(1, Math.round(rect.width * this.dpr));
+            const h = Math.max(1, Math.round(rect.height * this.dpr));
+            const isInitial = (this.canvas.width === 0 || this.canvas.height === 0);
+            this.canvas.width = w;
+            this.canvas.height = h;
+            if (isInitial) {
+                this.applyInitialViewport();
+            } else {
+                this.render();
+            }
+        };
+        window.addEventListener("resize", () => window.requestAnimationFrame(resize));
+        resize();
+    }
+
+    setupEventListeners() {
+        this.canvas.addEventListener("pointerdown", e => this.onPointerDown(e));
+        this.canvas.addEventListener("pointermove", e => {
+            if (this.pointerId === null && !this.pinchState) {
+                this.scheduleCursorSync(this.normalizePoint(this.screenToWorld(this.getCanvasPoint(e))));
+            }
+        });
+        window.addEventListener("pointermove", e => this.onPointerMove(e));
+        window.addEventListener("pointerup", e => this.onPointerUp(e));
+        window.addEventListener("pointercancel", e => this.onPointerUp(e));
+        this.canvas.addEventListener("wheel", e => {
+            e.preventDefault();
+            const factor = e.deltaY < 0 ? 1.12 : 0.88;
+            this.zoomAt(factor, this.getCanvasPoint(e));
+        }, { passive: false });
+
+        this.canvas.addEventListener("contextmenu", e => e.preventDefault());
+        window.addEventListener("blur", () => {
+            this.finishInteraction();
+            this.stopContinuousZoom();
+        });
+        window.addEventListener("beforeunload", () => this.leaveRoom());
+        
+        window.addEventListener("keydown", e => {
+            if ((e.target.tagName || "").toLowerCase() === "input") return;
+            const key = e.key.toLowerCase();
+            if (key === " ") {
+                this.spacePressed = true;
+            }
+            if (key === "f") {
+                e.preventDefault();
+                this.fitView();
+            }
+            if (key === "1") {
+                this.interactionMode = "draw";
+                this.isEraser = false;
+                this.updateToolButtons();
+            }
+            if (key === "2") {
+                this.interactionMode = "pan";
+                this.isEraser = false;
+                this.updateToolButtons();
+            }
+            if (key === "e") {
+                this.interactionMode = "draw";
+                this.isEraser = !this.isEraser;
+                this.updateToolButtons();
+            }
+            if ((e.ctrlKey || e.metaKey) && key === "z") {
+                e.preventDefault();
+                this.undoAction();
+            }
+            if ((e.ctrlKey || e.metaKey) && key === "y") {
+                e.preventDefault();
+                this.redoAction();
+            }
+            if (key === "[") {
+                e.preventDefault();
+                this.setBrushSize(this.brushSize - 1);
+            }
+            if (key === "]") {
+                e.preventDefault();
+                this.setBrushSize(this.brushSize + 1);
+            }
+        });
+
+        window.addEventListener("keyup", e => {
+            if (e.key === " ") {
+                this.spacePressed = false;
+            }
+        });
+
+        document.getElementById("mode-toggle").addEventListener("click", () => {
+            this.interactionMode = this.interactionMode === "pan" ? "draw" : "pan";
+            this.isEraser = false;
+            this.updateToolButtons();
+        });
+        document.getElementById("draw-mode-btn").addEventListener("click", () => {
+            this.interactionMode = "draw";
+            this.isEraser = false;
+            this.updateToolButtons();
+        });
+        document.getElementById("eraser-btn").addEventListener("click", () => {
+            this.interactionMode = "draw";
+            this.isEraser = !this.isEraser;
+            this.updateToolButtons();
+        });
+
+        document.getElementById("undo-btn").addEventListener("click", () => this.undoAction());
+        document.getElementById("redo-btn").addEventListener("click", () => this.redoAction());
+        document.getElementById("clear-btn").addEventListener("click", () => this.clearBoard());
+        document.getElementById("export-btn").addEventListener("click", () => this.handleExport());
+
+        this.setupHoldZoom(document.getElementById("zoom-in"), 1.12, 1.035);
+        this.setupHoldZoom(document.getElementById("zoom-out"), 0.88, 0.965);
+        document.getElementById("fit-view").addEventListener("click", () => this.fitView());
+
+        document.getElementById("copy-link-btn").addEventListener("click", async () => {
+            const btn = document.getElementById("copy-link-btn");
+            try {
+                const code = this.roomId.startsWith("sk-") ? this.roomId.slice(3) : this.roomId;
+                await navigator.clipboard.writeText(code);
+                btn.textContent = "COPIED";
+            } catch (err) {
+                btn.textContent = "FAILED";
+            }
+            window.setTimeout(() => {
+                btn.textContent = "COPY";
+            }, 1800);
+        });
+
+        document.getElementById("chat-btn").addEventListener("click", () => {
+            document.getElementById("chat-widget").classList.toggle("hidden");
+            document.getElementById("chat-dot").classList.add("hidden");
+        });
+        document.getElementById("close-chat").addEventListener("click", () => {
+            document.getElementById("chat-widget").classList.add("hidden");
+        });
+        document.getElementById("chat-form").addEventListener("submit", e => {
+            e.preventDefault();
+            this.sendChatMessage();
+        });
+
+        document.querySelector(".connection-pill").addEventListener("click", () => {
+            this.updateMembersUI();
+            document.getElementById("members-modal").classList.remove("hidden");
+        });
+        document.getElementById("close-members").addEventListener("click", () => {
+            document.getElementById("members-modal").classList.add("hidden");
+        });
+
+        this.setupSizePicker();
+    }
+
+    setupColorPicker() {
+        const picker = document.getElementById("color-picker");
+        const trigger = document.getElementById("color-picker-trigger");
+        const swatch = document.getElementById("color-swatch");
+        const popover = document.getElementById("color-picker-popover");
+        const widget = document.getElementById("color-picker-widget");
+        
+        if (!(picker && trigger && swatch && popover && widget)) return;
+
+        const updateColor = (color) => {
+            this.setBrushColor(color);
+            picker.value = this.currentColor;
+            swatch.style.background = this.currentColor;
+        };
+
+        updateColor(this.currentColor);
+
+        const initIro = () => {
+            if (this.colorPicker || !window.iro || typeof window.iro.ColorPicker !== "function") {
+                return Boolean(this.colorPicker);
+            }
+            this.colorPicker = new window.iro.ColorPicker(widget, {
+                width: 180,
+                color: this.currentColor,
+                borderWidth: 3,
+                borderColor: "#111111",
+                layout: [
+                    { component: window.iro.ui.Wheel },
+                    { component: window.iro.ui.Slider, options: { sliderType: "value" } }
+                ]
+            });
+            this.colorPicker.on("color:change", color => {
+                updateColor(color.hexString);
+            });
+            return true;
+        };
+
+        if (!window.iro || typeof window.iro.ColorPicker !== "function") {
+            picker.hidden = false;
+            trigger.addEventListener("click", () => picker.click());
+            picker.addEventListener("input", e => updateColor(e.target.value));
+            return;
+        }
+
+        const positionPopover = () => {
+            const tools = document.getElementById("main-tools");
+            if (!tools) return;
+            const toolsRect = tools.getBoundingClientRect();
+            const triggerRect = trigger.getBoundingClientRect();
+            const isMobile = window.matchMedia("(max-width: 600px)").matches;
+            const width = isMobile ? 176 : 184;
+            const left = Math.max(12, Math.min(window.innerWidth - width - 12, triggerRect.left + triggerRect.width / 2 - width / 2));
+            popover.style.left = `${left}px`;
+            if (isMobile) {
+                const top = Math.max(12, toolsRect.top - popover.offsetHeight - 10);
+                popover.style.top = `${top}px`;
+            } else {
+                popover.style.top = `${toolsRect.bottom + 10}px`;
+            }
+        };
+
+        const showPopover = () => {
+            popover.classList.add("open");
+            popover.setAttribute("aria-hidden", "false");
+            if (initIro()) {
+                window.requestAnimationFrame(() => {
+                    if (this.colorPicker && typeof this.colorPicker.resize === "function") {
+                        this.colorPicker.resize(window.matchMedia("(max-width: 600px)").matches ? 142 : 150);
+                    }
+                    if (this.colorPicker && this.colorPicker.color) {
+                        this.colorPicker.color.hexString = this.currentColor;
+                    }
+                    positionPopover();
+                });
+            }
+        };
+
+        const hidePopover = () => {
+            popover.classList.remove("open");
+            popover.setAttribute("aria-hidden", "true");
+        };
+
+        trigger.addEventListener("click", e => {
+            e.preventDefault();
+            popover.classList.contains("open") ? hidePopover() : showPopover();
+        });
+
+        picker.addEventListener("input", e => updateColor(e.target.value));
+
+        document.addEventListener("pointerdown", e => {
+            if (popover.classList.contains("open")) {
+                if (!popover.contains(e.target) && !trigger.contains(e.target)) {
+                    hidePopover();
+                }
+            }
+        });
+
+        window.addEventListener("keydown", e => {
+            if (e.key === "Escape") hidePopover();
+        });
+
+        window.addEventListener("resize", () => {
+            if (popover.classList.contains("open")) window.requestAnimationFrame(positionPopover);
+        });
+
+        window.addEventListener("scroll", () => {
+            if (popover.classList.contains("open")) window.requestAnimationFrame(positionPopover);
+        }, true);
+    }
+
+    setBrushColor(color) {
+        this.currentColor = String(color || "#111111").toUpperCase();
+        const preview = document.getElementById("size-preview");
+        const swatch = document.getElementById("color-swatch");
+        const picker = document.getElementById("color-picker");
+        if (preview) preview.style.background = this.currentColor;
+        if (swatch) swatch.style.background = this.currentColor;
+        if (picker && picker.value !== this.currentColor) picker.value = this.currentColor;
+    }
+
+    setupSizePicker() {
+        const toggle = document.getElementById("size-toggle");
+        const popover = document.getElementById("size-picker-popover");
+        const slider = document.getElementById("size-slider");
+        if (!toggle || !popover || !slider) return;
+
+        if (window.noUiSlider && !slider.noUiSlider) {
+            window.noUiSlider.create(slider, {
+                start: this.brushSize,
+                step: 1,
+                connect: [true, false],
+                range: { min: 1, max: 100 },
+                tooltips: {
+                    to: val => `${Math.round(val)}`,
+                    from: val => Number(val)
+                }
+            });
+        }
+
+        const positionPopover = () => {
+            const tools = document.getElementById("main-tools");
+            if (!tools) return;
+            const toolsRect = tools.getBoundingClientRect();
+            const toggleRect = toggle.getBoundingClientRect();
+            const isMobile = window.matchMedia("(max-width: 600px)").matches;
+            const width = isMobile ? 176 : 184;
+            const left = Math.max(12, Math.min(window.innerWidth - width - 12, toggleRect.left + toggleRect.width / 2 - width / 2));
+            popover.style.left = `${left}px`;
+            popover.style.top = isMobile ? `${Math.max(12, toolsRect.top - popover.offsetHeight - 10)}px` : `${toolsRect.bottom + 10}px`;
+        };
+
+        const showPopover = () => {
+            popover.classList.add("open");
+            popover.setAttribute("aria-hidden", "false");
+            window.requestAnimationFrame(() => {
+                positionPopover();
+                if (slider.noUiSlider) {
+                    slider.noUiSlider.set(this.brushSize);
+                    const handle = slider.querySelector(".noUi-handle");
+                    if (handle) handle.focus({ preventScroll: true });
+                }
+            });
+        };
+
+        const hidePopover = () => {
+            if (popover.contains(document.activeElement)) {
+                toggle.focus({ preventScroll: true });
+            }
+            popover.classList.remove("open");
+            popover.setAttribute("aria-hidden", "true");
+        };
+
+        toggle.addEventListener("click", e => {
+            e.preventDefault();
+            popover.classList.contains("open") ? hidePopover() : showPopover();
+        });
+
+        if (slider.noUiSlider) {
+            slider.noUiSlider.on("update", val => {
+                this.setBrushSize(val[0], false);
+            });
+        }
+
+        document.addEventListener("pointerdown", s => {
+            if (popover.classList.contains("open")) {
+                if (!popover.contains(s.target) && !toggle.contains(s.target)) {
+                    hidePopover();
+                }
+            }
+        });
+
+        window.addEventListener("keydown", e => {
+            if (e.key === "Escape") hidePopover();
+        });
+
+        window.addEventListener("resize", () => {
+            if (popover.classList.contains("open")) window.requestAnimationFrame(positionPopover);
+        });
+
+        window.addEventListener("scroll", () => {
+            if (popover.classList.contains("open")) window.requestAnimationFrame(positionPopover);
+        }, true);
+
+        this.setBrushSize(this.brushSize);
+    }
+
+    setBrushSize(size) {
+        const val = Math.max(1, Math.min(100, parseInt(size, 10) || 1));
+        this.brushSize = val;
+        const preview = document.getElementById("size-preview");
+        const valueDisplay = document.getElementById("size-preview-value");
+        const slider = document.getElementById("size-slider");
+        if (preview) {
+            const sizePx = 4 + (this.brushSize - 1) / 99 * 30;
+            preview.style.width = `${sizePx}px`;
+            preview.style.height = `${sizePx}px`;
+            preview.style.background = this.currentColor;
+        }
+        if (valueDisplay) {
+            valueDisplay.textContent = String(this.brushSize);
+        }
+        if (slider && slider.noUiSlider) {
+            if (Number(slider.noUiSlider.get()) !== this.brushSize) {
+                slider.noUiSlider.set(this.brushSize);
+            }
+        }
+    }
+
+    setupHoldZoom(btn, rate, slowRate) {
+        if (!btn) return;
+        const stop = () => this.stopContinuousZoom();
+        btn.addEventListener("pointerdown", e => {
+            e.preventDefault();
+            this.stopContinuousZoom();
+            this.zoomAt(rate, this.getCanvasCenterPoint());
+            this.zoomHoldDelayTimer = window.setTimeout(() => {
+                this.zoomHoldTimer = window.setInterval(() => {
+                    this.zoomAt(slowRate, this.getCanvasCenterPoint());
+                }, 60);
+            }, 220);
+        });
+        btn.addEventListener("pointerup", stop);
+        btn.addEventListener("pointercancel", stop);
+        btn.addEventListener("pointerleave", stop);
+        btn.addEventListener("lostpointercapture", stop);
+    }
+
+    stopContinuousZoom() {
+        window.clearTimeout(this.zoomHoldDelayTimer);
+        window.clearInterval(this.zoomHoldTimer);
+        this.zoomHoldDelayTimer = null;
+        this.zoomHoldTimer = null;
+    }
+
+    getCanvasCenterPoint() {
+        return { x: this.canvas.width / 2, y: this.canvas.height / 2 };
+    }
+
+    checkIdentity() {
+        const modal = document.getElementById("name-modal");
+        const input = document.getElementById("user-nickname");
+        const btn = document.getElementById("join-btn");
+        if (this.nickname) {
+            input.value = this.nickname;
+            modal.classList.add("hidden");
+            this.startSession();
+            return;
+        }
+        modal.classList.remove("hidden");
+        this.hideLoader();
+        input.focus();
+        const join = () => {
+            const nickname = input.value.trim();
+            if (nickname) {
+                this.nickname = nickname.slice(0, 20);
+                localStorage.setItem("sketch_nickname", this.nickname);
+                modal.classList.add("hidden");
+                this.startSession();
+            } else {
+                input.focus();
+            }
+        };
+        btn.addEventListener("click", join);
+        input.addEventListener("keydown", e => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                join();
+            }
+        });
+    }
+
+    async startSession() {
+        if (!this.sessionStarted) {
+            this.sessionStarted = true;
+            await this.loadPersistentState();
+            this.initPeer();
+        }
+    }
+
+    initPeer() {
+        if (typeof Peer !== "function") {
+            this.setConnectionStatus(false);
+            this.hideLoader();
+            window.alert("PeerJS failed to load.");
+            return;
+        }
+        this.peer = new Peer(this.peerId, {
+            debug: 1,
+            config: {
+                iceServers: [
+                    { urls: "stun:stun.l.google.com:19302" }
+                ]
+            }
+        });
+        this.peer.on("open", async () => {
+            await this.syncPresence("join");
+            await this.fetchPresence();
+            this.startLoops();
+            this.setConnectionStatus(true);
+            this.hideLoader();
+            if (this.intro) {
+                window.history.replaceState({}, "", window.location.pathname);
+            }
+        });
+        this.peer.on("connection", conn => this.setupConnection(conn));
+        this.peer.on("error", err => {
+            console.warn("[PeerJS]", err);
+            this.setConnectionStatus(false);
+        });
+        this.peer.on("disconnected", () => {
+            this.setConnectionStatus(false);
+            this.peer.reconnect();
+        });
+    }
+
+    startLoops() {
+        this.queueTimer = window.setInterval(() => this.flushActionQueue(), 2000);
+        this.discoveryTimer = window.setInterval(() => this.fetchPresence(), 5000);
+        this.heartbeatTimer = window.setInterval(() => this.syncPresence("heartbeat"), 15000);
+        this.presenceTimer = window.setInterval(() => this.broadcastCursor(true), 1200);
+        this.stateSyncTimer = window.setInterval(() => this.pollStateSync(), 4000); // Periodic state sync fallback
+    }
+
+    async fetchPresence() {
+        try {
+            const data = await this.requestJson(`${this.sigUrl}?room=${encodeURIComponent(this.roomId)}&_=${Date.now()}`);
+            if (!data.ok) throw new Error(data.error || "Presence failed");
+            const peers = Array.isArray(data.peers) ? data.peers : [];
+            this.updateMembersFromPresence(peers);
+            peers.forEach(peer => {
+                if (peer && peer.id && peer.id !== this.peerId && !this.connections.has(peer.id) && !this.pendingConnections.has(peer.id)) {
+                    this.connectToPeer(peer.id);
+                }
+            });
+            this.setConnectionStatus(true);
+        } catch (err) {
+            this.setConnectionStatus(false);
+        }
+    }
+
+    updateMembersFromPresence(peers) {
+        this.members = new Map();
+        peers.forEach(peer => {
+            if (peer && peer.id) {
+                this.members.set(peer.id, {
+                    id: peer.id,
+                    name: peer.name || "Guest",
+                    color: peer.color || "#7D5FFF",
+                    cursor: peer.cursor || null
+                });
+            }
+        });
+        if (!this.members.has(this.peerId)) {
+            this.members.set(this.peerId, {
+                id: this.peerId,
+                name: this.nickname,
+                color: this.peerColor,
+                cursor: this.lastCursorWorld
+            });
+        }
+        this.renderRemoteCursors();
+        this.updateMembersUI();
+    }
+
+    async syncPresence(action) {
+        const payload = {
+            action: action,
+            id: this.peerId,
+            name: this.nickname,
+            color: this.peerColor,
+            cursor: this.lastCursorWorld
+        };
+        if (action === "leave" && navigator.sendBeacon) {
+            try {
+                if (navigator.sendBeacon(`${this.sigUrl}?room=${encodeURIComponent(this.roomId)}`, new Blob([JSON.stringify(payload)], { type: "application/json" }))) {
+                    return;
+                }
+            } catch (err) {}
+        }
+        try {
+            await this.requestJson(`${this.sigUrl}?room=${encodeURIComponent(this.roomId)}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+                keepalive: action === "leave"
+            });
+        } catch (err) {}
+    }
+
+    connectToPeer(peerId) {
+        if (!this.peer || this.connections.has(peerId) || this.pendingConnections.has(peerId)) return;
+        this.pendingConnections.add(peerId);
+        const conn = this.peer.connect(peerId, { reliable: true });
+        this.setupConnection(conn);
+    }
+
+    setupConnection(conn) {
+        conn.on("open", () => {
+            this.pendingConnections.delete(conn.peer);
+            this.connections.set(conn.peer, conn);
+            this.sendTo(conn.peer, {
+                type: "identity",
+                id: this.peerId,
+                name: this.nickname,
+                color: this.peerColor
+            });
+            this.sendFullState(conn.peer);
+            this.updateMembersUI();
+        });
+        conn.on("data", data => this.handlePeerData(conn.peer, data));
+        
+        const cleanup = () => {
+            this.pendingConnections.delete(conn.peer);
+            if (this.connections.get(conn.peer) === conn) {
+                this.connections.delete(conn.peer);
+            }
+            this.liveRemoteStrokes.forEach((stroke, strokeId) => {
+                if (stroke.owner === conn.peer) {
+                    this.liveRemoteStrokes.delete(strokeId);
+                }
+            });
+            this.render();
+            this.updateMembersUI();
+        };
+        conn.on("close", cleanup);
+        conn.on("error", cleanup);
+    }
+
+    handlePeerData(peer, data) {
+        if (!data || !data.type) return;
+        const handlers = {
+            "identity": () => {
+                this.members.set(peer, {
+                    id: peer,
+                    name: data.name || "Guest",
+                    color: data.color || "#7D5FFF",
+                    cursor: null
+                });
+                this.updateMembersUI();
+            },
+            "full-state": () => {
+                if ((data.sentAt || 0) >= this.lastStateSyncAt) {
+                    this.lastStateSyncAt = data.sentAt || Date.now();
+                    this.applyFullState(data.state || {});
+                }
+            },
+            "stroke-live": () => {
+                if (data.stroke && data.stroke.id) {
+                    this.liveRemoteStrokes.set(data.stroke.id, data.stroke);
+                    this.render();
+                }
+            },
+            "stroke-final": () => {
+                if (data.stroke && data.stroke.id) {
+                    this.liveRemoteStrokes.delete(data.stroke.id);
+                    this.strokes.set(data.stroke.id, data.stroke);
+                    this.contentBounds = this.calculateStrokeBounds();
+                    this.render();
+                }
+            },
+            "stroke-remove": () => {
+                this.liveRemoteStrokes.delete(data.strokeId);
+                this.strokes.delete(data.strokeId);
+                this.contentBounds = this.calculateStrokeBounds();
+                this.render();
+            },
+            "board-clear": () => {
+                this.strokes.clear();
+                this.liveRemoteStrokes.clear();
+                this.redoStack = [];
+                this.contentBounds = null;
+                this.render();
+                this.updateUndoRedoButtons();
+            },
+            "cursor": () => {
+                const member = this.members.get(peer);
+                if (member) {
+                    member.cursor = data.cursor || null;
+                    this.renderRemoteCursors();
+                }
+            },
+            "chat": () => {
+                if (data.message && !this.messageIds.has(data.message.id)) {
+                    this.messages.push(data.message);
+                    this.messages = this.messages.slice(-60);
+                    this.renderChatMessages();
+                }
+            }
+        };
+        if (handlers[data.type]) {
+            handlers[data.type]();
+        }
+    }
+
+    sendTo(peer, data) {
+        const conn = this.connections.get(peer);
+        if (conn && conn.open) {
+            conn.send(data);
+        }
+    }
+
+    broadcast(data) {
+        this.connections.forEach(conn => {
+            if (conn.open) {
+                conn.send(data);
+            }
+        });
+    }
+
+    sendFullState(peer) {
+        this.sendTo(peer, {
+            type: "full-state",
+            sentAt: Date.now(),
+            state: {
+                strokes: Array.from(this.strokes.values()),
+                messages: this.messages.slice(-60),
+                meta: {
+                    bounds: this.contentBounds || this.calculateStrokeBounds()
+                }
+            }
+        });
+    }
+
+    applyFullState(state) {
+        this.localRevision = parseInt(state.revision || 0, 10);
+        
+        const newStrokes = new Map();
+        (Array.isArray(state.strokes) ? state.strokes : [])
+            .filter(s => s && s.id && Array.isArray(s.points))
+            .sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0))
+            .forEach(s => newStrokes.set(s.id, s));
+        
+        this.strokes = newStrokes;
+        this.messages = Array.isArray(state.messages) ? state.messages.slice(-60) : [];
+        this.contentBounds = this.normalizeBounds(state.meta?.bounds) || this.calculateStrokeBounds();
+        this.render();
+        this.renderChatMessages();
+        this.updateUndoRedoButtons();
+        
+        if (!this.hasAppliedInitialViewport && this.canvas.width > 0 && this.canvas.height > 0) {
+            this.applyInitialViewport();
+        } else if (this.shouldAutoFitLoadedContent && this.contentBounds) {
+            this.shouldAutoFitLoadedContent = false;
+            this.fitView();
+        }
+    }
+
+    async loadPersistentState() {
+        try {
+            const res = await this.requestJson(`${this.storeUrl}?room=${encodeURIComponent(this.roomId)}&_=${Date.now()}`);
+            if (!res.ok || !res.state) return;
+            this.applyFullState(res.state);
+        } catch (err) {}
+    }
+
+    enqueueAction(action) {
+        if (!action || !action.action) return;
+        if (action.action === "clear") {
+            this.actionQueue = [action];
+        } else if (action.action === "upsert-stroke" && action.stroke?.id) {
+            this.actionQueue = this.actionQueue.filter(entry => {
+                if (!entry) return false;
+                if (entry.action === "clear") return true;
+                if (entry.action === "upsert-stroke" || entry.action === "remove-stroke") {
+                    return (entry.stroke?.id || entry.strokeId) !== action.stroke.id;
+                }
+                return true;
+            });
+            this.actionQueue.push(action);
+        } else if (action.action === "remove-stroke" && action.strokeId) {
+            this.actionQueue = this.actionQueue.filter(entry => {
+                if (!entry) return false;
+                if (entry.action === "clear") return true;
+                if (entry.action === "upsert-stroke" || entry.action === "remove-stroke") {
+                    return (entry.stroke?.id || entry.strokeId) !== action.strokeId;
+                }
+                return true;
+            });
+            this.actionQueue.push(action);
+        } else if (action.action === "add-message" && action.message?.id) {
+            const exists = this.actionQueue.some(entry => entry && entry.action === "add-message" && entry.message?.id === action.message.id);
+            if (!exists) {
+                this.actionQueue.push(action);
+            }
+        } else {
+            this.actionQueue.push(action);
+        }
+        this.flushActionQueue();
+    }
+
+    async flushActionQueue() {
+        if (this.isFlushingQueue || this.actionQueue.length === 0) return;
+        this.isFlushingQueue = true;
+        while (this.actionQueue.length > 0) {
+            const batch = this.actionQueue.slice(0, 24);
+            try {
+                const res = await this.requestJson(`${this.storeUrl}?room=${encodeURIComponent(this.roomId)}`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: "batch", actions: batch })
+                });
+                if (res && res.ok && res.state) {
+                    this.localRevision = parseInt(res.state.revision || 0, 10);
+                }
+                this.actionQueue.splice(0, batch.length);
+            } catch (err) {
+                break;
+            }
+        }
+        this.isFlushingQueue = false;
+    }
+
+    async pollStateSync() {
+        try {
+            // Only poll if we have no active peer connections (WebRTC failing/NAT block)
+            if (this.connections.size > 0) {
+                return;
+            }
+            const res = await this.requestJson(`${this.storeUrl}?room=${encodeURIComponent(this.roomId)}&_=${Date.now()}`);
+            if (res && res.ok && res.state) {
+                const serverRevision = parseInt(res.state.revision || 0, 10);
+                if (serverRevision > this.localRevision) {
+                    this.applyFullState(res.state);
+                }
+            }
+        } catch (e) {
+            // Ignore
+        }
+    }
+
+    requestJson(url, options = {}) {
+        return fetch(url, {
+            cache: "no-store",
+            credentials: "same-origin",
+            ...options
+        }).then(async res => {
+            const text = await res.text();
+            const data = text ? JSON.parse(text) : {};
+            return res.ok ? data : { ok: false, error: data.error || `HTTP ${res.status}` };
+        });
+    }
+
+    hideLoader() {
+        const loader = document.getElementById("page-loader");
+        if (loader) loader.classList.add("hidden");
+    }
+
+    getCanvasPoint(e) {
+        return this.getCanvasPointFromClient(e.clientX, e.clientY);
+    }
+
+    getCanvasPointFromClient(x, y) {
+        const rect = this.canvas.getBoundingClientRect();
+        return {
+            x: (x - rect.left) * this.dpr,
+            y: (y - rect.top) * this.dpr
+        };
+    }
+
+    screenToWorld(p) {
+        return {
+            x: (p.x - this.offset.x) / (this.scale * this.dpr),
+            y: (p.y - this.offset.y) / (this.scale * this.dpr)
+        };
+    }
+
+    worldToScreen(p) {
+        return {
+            x: p.x * this.scale + this.offset.x / this.dpr,
+            y: p.y * this.scale + this.offset.y / this.dpr
+        };
+    }
+
+    normalizePoint(p) {
+        if (!p) return null;
+        const x = Number(p.x);
+        const y = Number(p.y);
+        return Number.isFinite(x) && Number.isFinite(y) ? {
+            x: Math.max(-1000000, Math.min(1000000, Number(x.toFixed(2)))),
+            y: Math.max(-1000000, Math.min(1000000, Number(y.toFixed(2))))
+        } : null;
+    }
+
+    normalizeBounds(b) {
+        if (!b) return null;
+        const minX = Number(b.minX);
+        const minY = Number(b.minY);
+        const maxX = Number(b.maxX);
+        const maxY = Number(b.maxY);
+        return ![minX, minY, maxX, maxY].every(Number.isFinite) || minX > maxX || minY > maxY ? null : { minX, minY, maxX, maxY };
+    }
+
+    loadSavedViewport() {
+        try {
+            const data = localStorage.getItem(this.viewportStorageKey);
+            if (!data) return null;
+            const viewport = JSON.parse(data);
+            return viewport && Number.isFinite(viewport.scale) && Number.isFinite(viewport.offsetX) && Number.isFinite(viewport.offsetY) ? {
+                scale: viewport.scale,
+                offsetX: viewport.offsetX,
+                offsetY: viewport.offsetY
+            } : null;
+        } catch (err) {
+            return null;
+        }
+    }
+
+    applyInitialViewport() {
+        if (this.hasAppliedInitialViewport) return;
+        this.hasAppliedInitialViewport = true;
+        if (this.savedViewport) {
+            this.scale = Math.max(this.minScale, Math.min(this.savedViewport.scale, this.maxScale));
+            this.offset.x = this.savedViewport.offsetX;
+            this.offset.y = this.savedViewport.offsetY;
+            this.render();
+            return;
+        }
+        if (this.contentBounds || this.calculateStrokeBounds()) {
+            this.shouldAutoFitLoadedContent = false;
+        }
+        this.fitView();
+    }
+
+    scheduleViewportSave() {
+        window.clearTimeout(this.viewportSaveTimer);
+        this.viewportSaveTimer = window.setTimeout(() => {
+            try {
+                localStorage.setItem(this.viewportStorageKey, JSON.stringify({
+                    scale: Number(this.scale.toFixed(4)),
+                    offsetX: Math.round(this.offset.x),
+                    offsetY: Math.round(this.offset.y)
+                }));
+            } catch (err) {}
+        }, 120);
+    }
+
+    getDefaultBounds() {
+        const half = this.defaultViewSize / 2;
+        return { minX: -half, minY: -half, maxX: half, maxY: half };
+    }
+
+    calculateStrokeBounds(tempStroke = null) {
+        let bounds = null;
+        const list = tempStroke ? [...this.strokes.values(), tempStroke] : Array.from(this.strokes.values());
+        list.forEach(stroke => {
+            const strokeBounds = this.getStrokeBounds(stroke);
+            if (strokeBounds) {
+                bounds = bounds ? {
+                    minX: Math.min(bounds.minX, strokeBounds.minX),
+                    minY: Math.min(bounds.minY, strokeBounds.minY),
+                    maxX: Math.max(bounds.maxX, strokeBounds.maxX),
+                    maxY: Math.max(bounds.maxY, strokeBounds.maxY)
+                } : strokeBounds;
+            }
+        });
+        return bounds;
+    }
+
+    getStrokeBounds(stroke) {
+        if (!stroke || !Array.isArray(stroke.points) || stroke.points.length === 0) return null;
+        let bounds = null;
+        const size = Math.max(1, Number(stroke.size) || 1);
+        stroke.points.forEach(p => {
+            const pt = this.normalizePoint(p);
+            if (!pt) return;
+            const item = {
+                minX: pt.x - size,
+                minY: pt.y - size,
+                maxX: pt.x + size,
+                maxY: pt.y + size
+            };
+            bounds = bounds ? {
+                minX: Math.min(bounds.minX, item.minX),
+                minY: Math.min(bounds.minY, item.minY),
+                maxX: Math.max(bounds.maxX, item.maxX),
+                maxY: Math.max(bounds.maxY, item.maxY)
+            } : item;
+        });
+        return bounds;
+    }
+
+    getTouchPointers() {
+        return Array.from(this.activePointers.values()).filter(p => p.pointerType === "touch");
+    }
+
+    startPinchGesture() {
+        const touchList = this.getTouchPointers();
+        if (touchList.length < 2) return;
+        this.finishInteraction();
+        const [a, b] = touchList;
+        const ptA = this.getCanvasPointFromClient(a.clientX, a.clientY);
+        const ptB = this.getCanvasPointFromClient(b.clientX, b.clientY);
+        const midpoint = {
+            x: (ptA.x + ptB.x) / 2,
+            y: (ptA.y + ptB.y) / 2
+        };
+        this.pinchState = {
+            initialDistance: Math.max(1, Math.hypot(ptB.x - ptA.x, ptB.y - ptA.y)),
+            initialScale: this.scale,
+            worldAtMidpoint: this.screenToWorld(midpoint)
+        };
+    }
+
+    updatePinchGesture() {
+        const touchList = this.getTouchPointers();
+        if (touchList.length < 2 || !this.pinchState) return;
+        const [a, b] = touchList;
+        const ptA = this.getCanvasPointFromClient(a.clientX, a.clientY);
+        const ptB = this.getCanvasPointFromClient(b.clientX, b.clientY);
+        const midX = (ptA.x + ptB.x) / 2;
+        const midY = (ptA.y + ptB.y) / 2;
+        const dist = Math.max(1, Math.hypot(ptB.x - ptA.x, ptB.y - ptA.y));
+        const scale = Math.max(this.minScale, Math.min(this.pinchState.initialScale * (dist / this.pinchState.initialDistance), this.maxScale));
+        this.scale = scale;
+        this.offset.x = midX - this.pinchState.worldAtMidpoint.x * this.scale * this.dpr;
+        this.offset.y = midY - this.pinchState.worldAtMidpoint.y * this.scale * this.dpr;
+        this.render();
+    }
+
+    onPointerDown(e) {
+        if (e.target !== this.canvas) return;
+        this.activePointers.set(e.pointerId, {
+            pointerId: e.pointerId,
+            pointerType: e.pointerType,
+            clientX: e.clientX,
+            clientY: e.clientY
+        });
+        if (e.pointerType === "touch" && this.getTouchPointers().length >= 2) {
+            this.startPinchGesture();
+            e.preventDefault();
+            return;
+        }
+        const pt = this.getCanvasPoint(e);
+        if (this.interactionMode === "pan" || this.spacePressed || e.button === 1 || e.button === 2) {
+            this.isPanning = true;
+            this.pointerId = e.pointerId;
+            this.panStart = {
+                x: pt.x - this.offset.x,
+                y: pt.y - this.offset.y
+            };
+            this.canvas.setPointerCapture(e.pointerId);
+            e.preventDefault();
+            return;
+        }
+        if (e.button !== 0) return;
+        const worldPt = this.normalizePoint(this.screenToWorld(pt));
+        if (!worldPt) return;
+        const color = this.isEraser ? "#FFFFFF" : this.currentColor;
+        this.isDrawing = true;
+        this.pointerId = e.pointerId;
+        this.currentStroke = {
+            id: `stroke-${this.peerId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            owner: this.peerId,
+            color: color,
+            size: this.brushSize,
+            points: [worldPt],
+            createdAt: Date.now()
+        };
+        this.canvas.setPointerCapture(e.pointerId);
+        this.lastStrokeBroadcastAt = 0;
+        this.broadcastLiveStroke();
+        this.scheduleCursorSync(worldPt);
+        this.render();
+        e.preventDefault();
+    }
+
+    onPointerMove(e) {
+        if (this.activePointers.has(e.pointerId)) {
+            this.activePointers.set(e.pointerId, {
+                pointerId: e.pointerId,
+                pointerType: e.pointerType,
+                clientX: e.clientX,
+                clientY: e.clientY
+            });
+        }
+        if (this.pinchState && e.pointerType === "touch") {
+            this.updatePinchGesture();
+            e.preventDefault();
+            return;
+        }
+        if (this.pointerId !== e.pointerId) {
+            const pt = this.getCanvasPoint(e);
+            this.scheduleCursorSync(this.normalizePoint(this.screenToWorld(pt)));
+            return;
+        }
+        const pt = this.getCanvasPoint(e);
+        if (this.isPanning) {
+            this.offset.x = pt.x - this.panStart.x;
+            this.offset.y = pt.y - this.panStart.y;
+            this.scheduleCursorSync(this.normalizePoint(this.screenToWorld(pt)));
+            this.render();
+            e.preventDefault();
+            return;
+        }
+        if (!this.isDrawing || !this.currentStroke) {
+            this.scheduleCursorSync(this.normalizePoint(this.screenToWorld(pt)));
+            return;
+        }
+        const worldPt = this.normalizePoint(this.screenToWorld(pt));
+        if (!worldPt) return;
+        const lastPt = this.currentStroke.points[this.currentStroke.points.length - 1];
+        if (Math.hypot(worldPt.x - lastPt.x, worldPt.y - lastPt.y) < 0.5) return;
+        this.currentStroke.points.push(worldPt);
+        this.broadcastLiveStroke();
+        this.scheduleCursorSync(worldPt);
+        this.render();
+        e.preventDefault();
+    }
+
+    onPointerUp(e) {
+        this.activePointers.delete(e.pointerId);
+        if (this.pinchState && e.pointerType === "touch") {
+            if (this.getTouchPointers().length < 2) {
+                this.pinchState = null;
+                this.scheduleViewportSave();
+            }
+            e.preventDefault();
+            return;
+        }
+        if (this.pointerId !== e.pointerId) return;
+        if (this.isPanning) {
+            this.finishInteraction();
+            return;
+        }
+        if (!this.isDrawing || !this.currentStroke) {
+            this.finishInteraction();
+            return;
+        }
+        const stroke = this.currentStroke;
+        this.isDrawing = false;
+        this.currentStroke = null;
+        this.pointerId = null;
+        this.strokes.set(stroke.id, stroke);
+        this.liveRemoteStrokes.delete(stroke.id);
+        this.myStrokeIds.push(stroke.id);
+        this.redoStack = [];
+        this.scheduleCursorSync(stroke.points[stroke.points.length - 1]);
+        this.broadcast({ type: "stroke-final", stroke: stroke });
+        this.enqueueAction({ action: "upsert-stroke", stroke: stroke });
+        this.contentBounds = this.calculateStrokeBounds();
+        this.render();
+        this.updateUndoRedoButtons();
+    }
+
+    finishInteraction() {
+        this.isDrawing = false;
+        this.isPanning = false;
+        this.pointerId = null;
+        this.currentStroke = null;
+        this.scheduleViewportSave();
+    }
+
+    fitView() {
+        const bounds = this.contentBounds || this.calculateStrokeBounds() || this.getDefaultBounds();
+        const width = Math.max(120, bounds.maxX - bounds.minX);
+        const height = Math.max(120, bounds.maxY - bounds.minY);
+        const canvasW = Math.max(1, this.canvas.width / this.dpr - 160);
+        const canvasH = Math.max(1, this.canvas.height / this.dpr - 160);
+        this.scale = Math.max(this.minScale, Math.min(Math.min(canvasW / width, canvasH / height), this.maxScale));
+        const midX = (bounds.minX + bounds.maxX) / 2;
+        const midY = (bounds.minY + bounds.maxY) / 2;
+        this.offset.x = (this.canvas.width / this.dpr / 2 - midX * this.scale) * this.dpr;
+        this.offset.y = (this.canvas.height / this.dpr / 2 - midY * this.scale) * this.dpr;
+        this.render();
+        this.scheduleViewportSave();
+    }
+
+    zoomAt(factor, center) {
+        const prevScale = this.scale;
+        this.scale = Math.max(this.minScale, Math.min(this.scale * factor, this.maxScale));
+        if (prevScale !== this.scale) {
+            this.offset.x = center.x - (center.x - this.offset.x) * this.scale / prevScale;
+            this.offset.y = center.y - (center.y - this.offset.y) * this.scale / prevScale;
+            this.render();
+            this.scheduleViewportSave();
+        }
+    }
+
+    render() {
+        const ctx = this.ctx;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.fillStyle = "#fdfaf2";
+        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        this.renderBackground(ctx);
+        ctx.setTransform(this.scale * this.dpr, 0, 0, this.scale * this.dpr, this.offset.x, this.offset.y);
+        for (const stroke of this.strokes.values()) {
+            this.drawStroke(ctx, stroke);
+        }
+        for (const stroke of this.liveRemoteStrokes.values()) {
+            this.drawStroke(ctx, stroke);
+        }
+        if (this.currentStroke) {
+            this.drawStroke(ctx, this.currentStroke);
+        }
+        this.renderRemoteCursors();
+    }
+
+    renderBackground(ctx) {
+        const spacing = this.getGridSpacing();
+        const spacingMajor = 5 * spacing;
+        const minPt = this.screenToWorld({ x: 0, y: 0 });
+        const maxPt = this.screenToWorld({ x: this.canvas.width, y: this.canvas.height });
+        ctx.setTransform(this.scale * this.dpr, 0, 0, this.scale * this.dpr, this.offset.x, this.offset.y);
+        
+        const drawGrid = (step, color, lineWidth = 1) => {
+            const startX = Math.floor(minPt.x / step) * step;
+            const endX = Math.ceil(maxPt.x / step) * step;
+            const startY = Math.floor(minPt.y / step) * step;
+            const endY = Math.ceil(maxPt.y / step) * step;
+            ctx.beginPath();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = lineWidth / (this.scale * this.dpr);
+            for (let x = startX; x <= endX; x += step) {
+                ctx.moveTo(x, startY);
+                ctx.lineTo(x, endY);
+            }
+            for (let y = startY; y <= endY; y += step) {
+                ctx.moveTo(startX, y);
+                ctx.lineTo(endX, y);
+            }
+            ctx.stroke();
+        };
+
+        drawGrid(spacing, "#eadabe");
+        drawGrid(spacingMajor, "#d4c4a8", 1.5);
+
+        ctx.beginPath();
+        ctx.strokeStyle = "#ff9e9e";
+        ctx.lineWidth = 2 / (this.scale * this.dpr);
+        ctx.moveTo(0, minPt.y);
+        ctx.lineTo(0, maxPt.y);
+        ctx.moveTo(minPt.x, 0);
+        ctx.lineTo(maxPt.x, 0);
+        ctx.stroke();
+    }
+
+    getGridSpacing() {
+        const spacing = 44 / Math.max(this.scale, 0.0001);
+        return [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000].find(val => val >= spacing) || 25000;
+    }
+
+    drawStroke(ctx, stroke) {
+        if (!stroke || !Array.isArray(stroke.points) || stroke.points.length === 0) return;
+        ctx.strokeStyle = stroke.color;
+        ctx.lineWidth = stroke.size;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+        if (stroke.points.length === 1) {
+            ctx.lineTo(stroke.points[0].x + 0.01, stroke.points[0].y + 0.01);
+            ctx.stroke();
+            return;
+        }
+        if (stroke.points.length === 2) {
+            ctx.lineTo(stroke.points[1].x, stroke.points[1].y);
+            ctx.stroke();
+            return;
+        }
+        for (let i = 1; i < stroke.points.length - 2; i += 1) {
+            const curr = stroke.points[i];
+            const next = stroke.points[i + 1];
+            const midX = (curr.x + next.x) / 2;
+            const midY = (curr.y + next.y) / 2;
+            ctx.quadraticCurveTo(curr.x, curr.y, midX, midY);
+        }
+        const penultimate = stroke.points[stroke.points.length - 2];
+        const last = stroke.points[stroke.points.length - 1];
+        ctx.quadraticCurveTo(penultimate.x, penultimate.y, last.x, last.y);
+        ctx.stroke();
+    }
+
+    broadcastLiveStroke() {
+        if (!this.currentStroke) return;
+        const now = Date.now();
+        if (now - this.lastStrokeBroadcastAt >= 16) {
+            this.lastStrokeBroadcastAt = now;
+            this.broadcast({ type: "stroke-live", stroke: this.currentStroke });
+        }
+    }
+
+    undoAction() {
+        if (this.isDrawing) return;
+        while (this.myStrokeIds.length > 0) {
+            const id = this.myStrokeIds.pop();
+            const stroke = this.strokes.get(id);
+            if (stroke) {
+                this.strokes.delete(id);
+                this.redoStack.push(stroke);
+                this.contentBounds = this.calculateStrokeBounds();
+                this.broadcast({ type: "stroke-remove", strokeId: id });
+                this.enqueueAction({ action: "remove-stroke", strokeId: id });
+                this.render();
+                this.updateUndoRedoButtons();
+                break;
+            }
+        }
+    }
+
+    redoAction() {
+        if (this.isDrawing || this.redoStack.length === 0) return;
+        const stroke = this.redoStack.pop();
+        this.strokes.set(stroke.id, stroke);
+        this.myStrokeIds.push(stroke.id);
+        this.contentBounds = this.calculateStrokeBounds();
+        this.broadcast({ type: "stroke-final", stroke: stroke });
+        this.enqueueAction({ action: "upsert-stroke", stroke: stroke });
+        this.render();
+        this.updateUndoRedoButtons();
+    }
+
+    clearBoard() {
+        if (window.confirm("Clear the whole board for everyone?")) {
+            this.strokes.clear();
+            this.liveRemoteStrokes.clear();
+            this.myStrokeIds = [];
+            this.redoStack = [];
+            this.contentBounds = null;
+            this.broadcast({ type: "board-clear" });
+            this.enqueueAction({ action: "clear" });
+            this.render();
+            this.updateUndoRedoButtons();
+        }
+    }
+
+    handleExport() {
+        if (this.strokes.size === 0) {
+            window.alert("The board is empty. Draw something first.");
+            return;
+        }
+        const bounds = this.findStrokeBounds();
+        const w = Math.max(1, Math.ceil(bounds.maxX - bounds.minX + 80));
+        const h = Math.max(1, Math.ceil(bounds.maxY - bounds.minY + 80));
+        const scale = Math.min(1, 4096 / Math.max(w, h));
+        const canvasW = Math.max(1, Math.round(w * scale));
+        const canvasH = Math.max(1, Math.round(h * scale));
+        
+        const exportCanvas = document.createElement("canvas");
+        exportCanvas.width = canvasW;
+        exportCanvas.height = canvasH;
+        const ctx = exportCanvas.getContext("2d", { alpha: false });
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillRect(0, 0, canvasW, canvasH);
+        ctx.scale(scale, scale);
+        ctx.translate(40 - bounds.minX, 40 - bounds.minY);
+        for (const stroke of this.strokes.values()) {
+            this.drawStroke(ctx, stroke);
+        }
+        
+        const link = document.createElement("a");
+        link.download = `sketch-${this.roomId}-${Date.now()}.png`;
+        link.href = exportCanvas.toDataURL("image/png");
+        link.click();
+    }
+
+    findStrokeBounds() {
+        return this.contentBounds || this.calculateStrokeBounds() || this.getDefaultBounds();
+    }
+
+    sendChatMessage() {
+        const input = document.getElementById("chat-input");
+        const val = input.value.trim();
+        if (!val) return;
+        const msg = {
+            id: `msg-${this.peerId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            name: this.nickname,
+            text: val.slice(0, 400),
+            createdAt: Date.now()
+        };
+        this.messages.push(msg);
+        this.messages = this.messages.slice(-60);
+        this.broadcast({ type: "chat", message: msg });
+        this.enqueueAction({ action: "add-message", message: msg });
+        this.renderChatMessages();
+        input.value = "";
+        document.getElementById("chat-dot").classList.add("hidden");
+    }
+
+    renderChatMessages() {
+        const list = document.getElementById("chat-messages");
+        if (!list) return;
+        const countBefore = this.messageIds.size;
+        list.innerHTML = "";
+        this.messageIds = new Set();
+        this.messages.slice().sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0)).forEach(msg => {
+            if (!msg || !msg.id) return;
+            this.messageIds.add(msg.id);
+            const isMe = msg.name === this.nickname;
+            const div = document.createElement("div");
+            div.className = "msg " + (isMe ? "sent" : "received");
+            div.innerHTML = `<div class="msg-author">${this.escapeHtml(msg.name || "Guest")}</div><div>${this.escapeHtml(msg.text || "")}</div>`;
+            list.appendChild(div);
+        });
+        list.scrollTop = list.scrollHeight;
+        const lastMsg = this.messages[this.messages.length - 1];
+        const isChatHidden = document.getElementById("chat-widget").classList.contains("hidden");
+        if (lastMsg && isChatHidden && lastMsg.name !== this.nickname && this.messages.length >= countBefore && Number(lastMsg.createdAt || 0) > this.lastSeenMessageAt) {
+            document.getElementById("chat-dot").classList.remove("hidden");
+        }
+        if (lastMsg) {
+            this.lastSeenMessageAt = Math.max(this.lastSeenMessageAt, Number(lastMsg.createdAt || 0));
+        }
+    }
+
+    scheduleCursorSync(p) {
+        if (!p) return;
+        if (this.lastCursorWorld) {
+            const dx = p.x - this.lastCursorWorld.x;
+            const dy = p.y - this.lastCursorWorld.y;
+            if (Math.hypot(dx, dy) < 6) return;
+        }
+        this.pendingCursorWorld = p;
+        const elapsed = Date.now() - this.lastCursorSentAt;
+        if (elapsed >= 24) {
+            this.flushCursorSync();
+        } else {
+            window.clearTimeout(this.cursorSendTimer);
+            this.cursorSendTimer = window.setTimeout(() => this.flushCursorSync(), 24 - elapsed);
+        }
+    }
+
+    flushCursorSync() {
+        if (!this.pendingCursorWorld) return;
+        this.lastCursorSentAt = Date.now();
+        this.lastCursorWorld = this.pendingCursorWorld;
+        const p = this.pendingCursorWorld;
+        this.pendingCursorWorld = null;
+        const me = this.members.get(this.peerId);
+        if (me) me.cursor = p;
+        this.broadcast({ type: "cursor", cursor: p });
+    }
+
+    broadcastCursor(force = false) {
+        if (force) {
+            if (this.lastCursorWorld) {
+                this.broadcast({ type: "cursor", cursor: this.lastCursorWorld });
+            }
+        } else {
+            this.flushCursorSync();
+        }
+    }
+
+    renderRemoteCursors() {
+        const container = document.getElementById("cursors-container");
+        if (!container) return;
+        const activeIds = new Set();
+        this.members.forEach((member, id) => {
+            if (id === this.peerId || !member.cursor) return;
+            activeIds.add(id);
+            let item = this.remoteCursors.get(id);
+            if (!item) {
+                const el = document.createElement("div");
+                el.className = "remote-cursor";
+                const label = document.createElement("div");
+                label.className = "cursor-label";
+                el.appendChild(label);
+                container.appendChild(el);
+                item = { element: el, label: label };
+                this.remoteCursors.set(id, item);
+            }
+            item.element.style.background = member.color || "#7D5FFF";
+            item.label.textContent = member.name || "Guest";
+            const screenPt = this.worldToScreen(member.cursor);
+            item.element.style.left = `${screenPt.x}px`;
+            item.element.style.top = `${screenPt.y}px`;
+        });
+        this.remoteCursors.forEach((item, id) => {
+            if (!activeIds.has(id)) {
+                item.element.remove();
+                this.remoteCursors.delete(id);
+            }
+        });
+    }
+
+    updateMembersUI() {
+        const list = document.getElementById("members-list");
+        if (!list) return;
+        list.innerHTML = "";
+        const listData = Array.from(this.members.values()).sort((a, b) => {
+            if (a.id === this.peerId) return -1;
+            if (b.id === this.peerId) return 1;
+            return String(a.name || "Guest").localeCompare(String(b.name || "Guest"));
+        });
+        listData.forEach(member => {
+            const div = document.createElement("div");
+            div.className = "member-item";
+            div.innerHTML = `<div class="member-color" style="background:${member.color || "#7D5FFF"}"></div><span>${this.escapeHtml(member.name || "Guest")}</span>${member.id === this.peerId ? '<span class="member-you">YOU</span>' : ""}`;
+            list.appendChild(div);
+        });
+        const peerCount = document.getElementById("peer-count");
+        if (peerCount) {
+            peerCount.textContent = String(Math.max(1, listData.length || 1));
+        }
+    }
+
+    setConnectionStatus(status) {
+        const el = document.getElementById("connection-status");
+        if (el) {
+            el.classList.toggle("online", status);
+            el.classList.toggle("offline", !status);
+        }
+    }
+
+    updateToolButtons() {
+        const toggle = document.getElementById("mode-toggle");
+        const drawBtn = document.getElementById("draw-mode-btn");
+        const eraserBtn = document.getElementById("eraser-btn");
+        if (toggle) toggle.classList.toggle("active", this.interactionMode === "pan");
+        if (drawBtn) drawBtn.classList.toggle("active", this.interactionMode === "draw" && !this.isEraser);
+        if (eraserBtn) eraserBtn.classList.toggle("active", this.isEraser);
+    }
+
+    updateUndoRedoButtons() {
+        const undo = document.getElementById("undo-btn");
+        const redo = document.getElementById("redo-btn");
+        if (undo) undo.style.opacity = this.myStrokeIds.length > 0 ? "1" : "0.35";
+        if (redo) redo.style.opacity = this.redoStack.length > 0 ? "1" : "0.35";
+    }
+
+    leaveRoom() {
+        this.stopContinuousZoom();
+        window.clearTimeout(this.cursorSendTimer);
+        window.clearTimeout(this.viewportSaveTimer);
+        window.clearInterval(this.queueTimer);
+        window.clearInterval(this.discoveryTimer);
+        window.clearInterval(this.heartbeatTimer);
+        window.clearInterval(this.presenceTimer);
+        window.clearInterval(this.stateSyncTimer);
+        this.syncPresence("leave");
+        if (this.peer && !this.peer.destroyed) {
+            this.peer.destroy();
+        }
+    }
+
+    buildClientId() {
+        return `client-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    }
+
+    generateRandomColor() {
+        const colors = ["#FF3366", "#33FF99", "#7D5FFF", "#FFDE00", "#FF8C00", "#00D4FF"];
+        return colors[Math.floor(Math.random() * colors.length)];
+    }
+
+    escapeHtml(str) {
+        return String(str)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
+}
+
+window.SketchApp = SketchApp;
+window.addEventListener("load", () => {
+    new SketchApp();
+});

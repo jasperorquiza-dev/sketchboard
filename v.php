@@ -198,6 +198,5 @@ if (!$isExpired) {
     </script>
     <script src="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>/script.js?v=<?php echo (int) filemtime(__DIR__ . '/script.js'); ?>"></script>
     <script src="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>/eraser_fix.js?v=<?php echo (int) filemtime(__DIR__ . '/eraser_fix.js'); ?>"></script>
-    <script src="<?php echo htmlspecialchars($assetBase, ENT_QUOTES, 'UTF-8'); ?>/realtime_ws.js?v=<?php echo (int) filemtime(__DIR__ . '/realtime_ws.js'); ?>"></script>
 </body>
 </html>
