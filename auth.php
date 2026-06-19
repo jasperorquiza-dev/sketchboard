@@ -856,7 +856,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <div class="input-group">
                 <label for="reg-password">Password</label>
-                <input type="password" id="reg-password" name="password" class="auth-input" required placeholder="Minimum 6 characters">
+                <input type="password" id="reg-password" name="password" class="auth-input" required placeholder="Minimum 8 characters">
             </div>
 
             <div class="input-group">
@@ -910,7 +910,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <div class="input-group">
                 <label for="reset-password">New Password</label>
-                <input type="password" id="reset-password" name="password" class="auth-input" required placeholder="Minimum 6 characters">
+                <input type="password" id="reset-password" name="password" class="auth-input" required placeholder="Minimum 8 characters">
             </div>
 
             <div class="input-group">
