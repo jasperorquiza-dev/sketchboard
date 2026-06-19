@@ -32,7 +32,32 @@ ssh jasperobsequias99@34.123.45.67
 
 ---
 
-## 3. Install Apache, PHP, and Git
+## 3. Configure Swap Space (Highly Recommended)
+Since GCP **e2-micro** instances only have 1 GB of RAM, the system can run out of memory and crash under load (e.g. during database queries). Setting up 2 GB of swap space uses your storage as virtual memory to guarantee stability:
+```bash
+# 1. Allocate a 2GB file for swap
+sudo fallocate -l 2G /swapfile
+
+# 2. Secure the swapfile permissions
+sudo chmod 600 /swapfile
+
+# 3. Set up the swap area
+sudo mkswap /swapfile
+
+# 4. Enable the swap file
+sudo swapon /swapfile
+
+# 5. Make the swap file persistent across reboots
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+
+# 6. Adjust swappiness value (recommend 10 to prefer physical RAM)
+echo 'vm.swappiness=10' | sudo tee -a /etc/sysctl.conf
+sudo sysctl -p
+```
+
+---
+
+## 4. Install Apache, PHP, and Git
 Update the package index and install Apache web server, PHP (along with necessary database & encryption modules), and Git:
 ```bash
 sudo apt update
@@ -41,7 +66,7 @@ sudo apt install -y apache2 php php-mysql php-mbstring php-xml php-curl php-json
 
 ---
 
-## 4. Install and Secure MySQL Server
+## 5. Install and Secure MySQL Server
 1. Install the MySQL database server:
    ```bash
    sudo apt install -y mysql-server
@@ -53,7 +78,7 @@ sudo apt install -y apache2 php php-mysql php-mbstring php-xml php-curl php-json
 
 ---
 
-## 5. Configure MySQL Database
+## 6. Configure MySQL Database
 Log into the MySQL server as root:
 ```bash
 sudo mysql -u root -p
@@ -72,7 +97,7 @@ EXIT;
 
 ---
 
-## 6. Deploy Codebase to Apache Root
+## 8. Deploy Codebase to Apache Root
 1. Clean the default Apache web root folder:
    ```bash
    sudo rm -rf /var/www/html/*
@@ -89,7 +114,7 @@ EXIT;
 
 ---
 
-## 7. Configure Production Settings
+## 9. Configure Production Settings
 Create the configuration file:
 ```bash
 sudo -u www-data nano /var/www/html/config.php
@@ -107,7 +132,7 @@ Save and exit (`Ctrl + O`, `Enter`, `Ctrl + X`).
 
 ---
 
-## 8. Configure Apache Settings
+## 10. Configure Apache Settings
 To ensure `.htaccess` rules (like CSRF blocks and folder restrictions) work correctly, Apache must be configured to allow configuration overrides:
 1. Open the default site configuration:
    ```bash
@@ -128,7 +153,7 @@ To ensure `.htaccess` rules (like CSRF blocks and folder restrictions) work corr
 
 ---
 
-## 9. Install Let's Encrypt SSL (HTTPS)
+## 11. Install Let's Encrypt SSL (HTTPS)
 Install Certbot to secure your traffic on `sketchboard.online`:
 ```bash
 sudo apt install -y certbot python3-certbot-apache

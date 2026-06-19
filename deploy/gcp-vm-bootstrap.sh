@@ -25,6 +25,18 @@ if [ -z "${SMTP_HOST}" ] || [ -z "${SMTP_USER}" ] || [ -z "${SMTP_PASS}" ]; then
     exit 1
 fi
 
+# Configure Swap Space (2GB swapfile for memory stability on e2-micro)
+if [ ! -f /swapfile ]; then
+    echo "Creating 2GB swap file..."
+    sudo fallocate -l 2G /swapfile
+    sudo chmod 600 /swapfile
+    sudo mkswap /swapfile
+    sudo swapon /swapfile
+    echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+    echo 'vm.swappiness=10' | sudo tee -a /etc/sysctl.conf
+    sudo sysctl -p
+fi
+
 sudo apt update
 sudo apt install -y apache2 mariadb-server certbot python3-certbot-apache git unzip
 sudo apt install -y php php-cli php-mysql php-mbstring php-xml php-curl php-zip php-gd php-intl
