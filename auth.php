@@ -824,7 +824,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             <div class="input-group">
                 <label for="login-username">Username or Email</label>
-                <input type="text" id="login-username" name="username_or_email" class="auth-input" required placeholder="Enter username or email">
+                <input type="text" id="login-username" name="username_or_email" class="auth-input" required placeholder="Enter username or email" value="<?php echo isset($_POST['username_or_email']) ? htmlspecialchars($_POST['username_or_email'], ENT_QUOTES, 'UTF-8') : ''; ?>">
             </div>
 
             <div class="input-group">
@@ -846,12 +846,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <div class="input-group">
                 <label for="reg-username">Username</label>
-                <input type="text" id="reg-username" name="username" class="auth-input" required placeholder="Letters, numbers, underscores" pattern="[a-zA-Z0-9_]{3,20}">
+                <input type="text" id="reg-username" name="username" class="auth-input" required placeholder="Letters, numbers, underscores" pattern="[a-zA-Z0-9_]{3,20}" value="<?php echo isset($_POST['username']) ? htmlspecialchars($_POST['username'], ENT_QUOTES, 'UTF-8') : ''; ?>">
             </div>
 
             <div class="input-group">
                 <label for="reg-email">Email Address</label>
-                <input type="email" id="reg-email" name="email" class="auth-input" required placeholder="you@example.com">
+                <input type="email" id="reg-email" name="email" class="auth-input" required placeholder="you@example.com" value="<?php echo isset($_POST['email']) ? htmlspecialchars($_POST['email'], ENT_QUOTES, 'UTF-8') : ''; ?>">
             </div>
 
             <div class="input-group" style="position: relative;">
@@ -883,6 +883,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="input-group">
                 <label for="reg-confirm">Confirm Password</label>
                 <input type="password" id="reg-confirm" name="confirm_password" class="auth-input" required placeholder="••••••••">
+                <div id="password-match-indicator" style="font-size: 0.8rem; font-weight: 700; margin-top: 5px; display: none;"></div>
             </div>
 
             <button type="submit" class="auth-btn" style="background: var(--clr-orange);">CREATE ACCOUNT</button>
@@ -1050,6 +1051,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     validate();
                     hidePopupSmoothly();
                 });
+            }
+
+            // Confirm Password Match Indicator
+            const regConfirm = document.getElementById('reg-confirm');
+            const matchIndicator = document.getElementById('password-match-indicator');
+            
+            if (regPassword && regConfirm && matchIndicator) {
+                const checkMatch = () => {
+                    const passVal = regPassword.value;
+                    const confirmVal = regConfirm.value;
+                    
+                    if (confirmVal === '') {
+                        matchIndicator.style.display = 'none';
+                        return;
+                    }
+                    
+                    matchIndicator.style.display = 'block';
+                    if (passVal === confirmVal) {
+                        matchIndicator.style.color = '#2e7d32'; // Green
+                        matchIndicator.textContent = 'Passwords match ✓';
+                    } else {
+                        matchIndicator.style.color = '#c62828'; // Red
+                        matchIndicator.textContent = 'Passwords do not match ✗';
+                    }
+                };
+                
+                regConfirm.addEventListener('input', checkMatch);
+                regPassword.addEventListener('input', checkMatch);
             }
         });
     </script>
