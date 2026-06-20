@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sketchpad - Collaborative Whiteboard</title>
+    <!-- Google Font: Caveat -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400..700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Main Notebook Container -->
+    <div class="notebook-container">
+        
+        <!-- ================= PAGE 1: AUTHENTICATION ================= -->
+        <section id="auth-view" class="view">
+            <div class="notebook-header">
+                <h1 class="sketch-title">Sketchpad</h1>
+                <p class="sketch-subtitle">draw together, anytime.</p>
+            </div>
+            
+            <div class="notebook-tabs">
+                <button id="tab-login" class="tab-btn active" onclick="switchAuthTab('login')">Sign In</button>
+                <button id="tab-register" class="tab-btn" onclick="switchAuthTab('register')">Register</button>
+            </div>
+            
+            <div class="notebook-page">
+                <div class="auth-forms-slider">
+                    <!-- Login Form -->
+                    <div id="login-form-container" class="form-container active">
+                        <form id="login-form" onsubmit="handleMockLogin(event)">
+                            <h2 class="form-title">Welcome Back!</h2>
+                            <div class="input-field">
+                                <label for="login-username">Username</label>
+                                <input type="text" id="login-username" placeholder="Type your username..." required>
+                            </div>
+                            <div class="input-field">
+                                <label for="login-password">Password</label>
+                                <input type="password" id="login-password" placeholder="Type your password..." required>
+                            </div>
+                            <button type="submit" class="paper-btn primary-btn">Let's Go! ➔</button>
+                        </form>
+                    </div>
+
+                    <!-- Register Form -->
+                    <div id="register-form-container" class="form-container">
+                        <form id="register-form" onsubmit="handleMockRegister(event)">
+                            <h2 class="form-title">Join the Club</h2>
+                            <div class="input-field">
+                                <label for="reg-username">Username</label>
+                                <input type="text" id="reg-username" placeholder="Choose a username..." oninput="validateUsername()" required>
+                            </div>
+                            <div class="input-field">
+                                <label for="reg-email">Email</label>
+                                <input type="email" id="reg-email" placeholder="Your email address..." required>
+                            </div>
+                            <div class="input-field">
+                                <label for="reg-password">Password</label>
+                                <input type="password" id="reg-password" placeholder="Create a password..." oninput="checkPasswordStrength()" required>
+                                
+                                <!-- Password Checklist -->
+                                <ul class="password-checklist" id="pw-checklist">
+                                    <li id="rule-length" class="invalid">Minimum 8 characters</li>
+                                    <li id="rule-upper" class="invalid">At least one uppercase letter</li>
+                                    <li id="rule-lower" class="invalid">At least one lowercase letter</li>
+                                    <li id="rule-number" class="invalid">At least one number</li>
+                                    <li id="rule-special" class="invalid">At least one special character</li>
+                                </ul>
+                            </div>
+                            <div class="input-field">
+                                <label for="reg-confirm">Confirm Password</label>
+                                <input type="password" id="reg-confirm" placeholder="Repeat the password..." oninput="checkPasswordMatch()" required>
+                                <span class="validation-message" id="confirm-msg"></span>
+                            </div>
+                            <button type="submit" id="register-submit-btn" class="paper-btn primary-btn" disabled>Create Account</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= PAGE 2: DASHBOARD ================= -->
+        <section id="dashboard-view" class="view hidden">
+            <div class="notebook-header dashboard-header">
+                <div>
+                    <h1 class="sketch-title">My Sketchpads</h1>
+                    <p class="sketch-subtitle">Welcome back, <span id="user-display-name" class="highlight">Guest</span>!</p>
+                </div>
+                <button class="paper-btn logout-btn" onclick="handleMockLogout()">Sign Out</button>
+            </div>
+
+            <div class="dashboard-grid">
+                <!-- Create/Join Section -->
+                <div class="action-panel paper-card">
+                    <h2 class="section-title">Start a Session</h2>
+                    
+                    <div class="action-box">
+                        <h3>Create a New Room</h3>
+                        <p class="action-desc">Generate a clean canvas and invite others to draw.</p>
+                        <button class="paper-btn primary-btn" onclick="createRoom()">Create Room ➔</button>
+                    </div>
+                    
+                    <div class="divider"><span>OR</span></div>
+                    
+                    <div class="action-box">
+                        <h3>Join Existing Room</h3>
+                        <p class="action-desc">Enter a 6-character room code to connect.</p>
+                        <div class="join-input-group">
+                            <input type="text" id="join-room-code" placeholder="CODE..." maxlength="6" oninput="this.value = this.value.toUpperCase()">
+                            <button class="paper-btn join-btn" onclick="joinRoom()">Join ➔</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sticky Note Room List -->
+                <div class="rooms-panel">
+                    <h2 class="section-title">Recent Whiteboards</h2>
+                    <div class="rooms-list" id="rooms-list-container">
+                        <!-- Dynamic rooms will be placed here -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= PAGE 3: WHITEBOARD ================= -->
+        <section id="whiteboard-view" class="view hidden">
+            <!-- Whiteboard Header -->
+            <div class="whiteboard-header">
+                <div class="room-details-left">
+                    <button class="paper-btn back-btn" onclick="exitRoom()">Dashboard</button>
+                    <div class="room-tag">
+                        <span>ROOM:</span> <strong id="active-room-code">#000000</strong>
+                    </div>
+                </div>
+                
+                <!-- Collaborative User List -->
+                <div class="users-tag">
+                    <span class="users-icon">👥</span>
+                    <div class="user-avatars" id="active-users-list">
+                        <!-- Mock active users -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Drawing Canvas Wrapper -->
+            <div class="canvas-wrapper">
+                <canvas id="sketch-canvas"></canvas>
+                <!-- Container for mock remote cursors -->
+                <div id="remote-cursors" class="remote-cursors-overlay"></div>
+            </div>
+
+            <!-- Sketchpad Toolbar -->
+            <div class="whiteboard-toolbar">
+                <!-- Tool Selector -->
+                <div class="tool-group">
+                    <button id="tool-pen" class="tool-btn active" title="Pen/Brush" onclick="selectTool('pen')">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                        <span>Pen</span>
+                    </button>
+                    <button id="tool-eraser" class="tool-btn" title="Eraser" onclick="selectTool('eraser')">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M20 20H7L3 16c-1.5-1.5-1.5-3.5 0-5l8.5-8.5c1-1 2.5-1 3.5 0l5 5c1 1 1 2.5 0 3.5L12 19.5M18 12l-9-9"/></svg>
+                        <span>Eraser</span>
+                    </button>
+                </div>
+
+                <!-- Color Swatches & Picker -->
+                <div class="tool-group flex-group">
+                    <div class="color-palette">
+                        <button class="color-swatch active" style="background-color: #1a1a1a;" onclick="selectColor('#1a1a1a', this)"></button>
+                        <button class="color-swatch" style="background-color: #e05c4b;" onclick="selectColor('#e05c4b', this)"></button>
+                        <button class="color-swatch" style="background-color: #2b8a3e;" onclick="selectColor('#2b8a3e', this)"></button>
+                        <button class="color-swatch" style="background-color: #1971c2;" onclick="selectColor('#1971c2', this)"></button>
+                        <button class="color-swatch" style="background-color: #e67e22;" onclick="selectColor('#e67e22', this)"></button>
+                    </div>
+                    <div class="custom-color-picker">
+                        <input type="color" id="canvas-color-picker" value="#1a1a1a" onchange="handleCustomColor(this.value)">
+                    </div>
+                </div>
+
+                <!-- Size Slider -->
+                <div class="tool-group size-group">
+                    <label for="brush-size">Size:</label>
+                    <input type="range" id="brush-size" min="1" max="50" value="5" oninput="updateBrushSize(this.value)">
+                    <span id="brush-size-val">5px</span>
+                </div>
+
+                <!-- Actions -->
+                <div class="tool-group">
+                    <button class="tool-btn danger-btn" title="Clear Canvas" onclick="clearCanvas()">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/></svg>
+                        <span>Clear</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+        
+    </div>
+
+    <!-- Alert Dialog (Mock message) -->
+    <div id="alert-popup" class="alert-popup hidden">
+        <div class="alert-box">
+            <p id="alert-message">Alert message goes here.</p>
+            <button class="paper-btn ok-btn" onclick="closeAlert()">Okay</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
