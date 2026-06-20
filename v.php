@@ -13,7 +13,7 @@ $assetBase = sketch_asset_base();
 
 // Enforce login
 if (!isset($_SESSION['user_id'])) {
-    header('Location: ' . $baseUrl . '/auth.php');
+    header('Location: ' . $baseUrl . '/');
     exit;
 }
 

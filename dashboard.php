@@ -14,7 +14,7 @@ $assetBase = sketch_asset_base();
 
 // Verify user is logged in
 if (!isset($_SESSION['user_id'])) {
-    header('Location: ' . $baseUrl . '/auth.php');
+    header('Location: ' . $baseUrl . '/');
     exit;
 }
 
@@ -27,7 +27,7 @@ $success = '';
 if (isset($_GET['action']) && $_GET['action'] === 'logout') {
     $_SESSION = [];
     session_destroy();
-    header('Location: ' . $baseUrl . '/auth.php');
+    header('Location: ' . $baseUrl . '/');
     exit;
 }
 

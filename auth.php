@@ -818,7 +818,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php endif; ?>
 
         <!-- Login Form -->
-        <form id="login-form" class="auth-form <?php echo $activeTab === 'login' ? 'active' : ''; ?>" method="POST" action="auth.php">
+        <form id="login-form" class="auth-form <?php echo $activeTab === 'login' ? 'active' : ''; ?>" method="POST" action="">
             <input type="hidden" name="action" value="login">
             <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(sketch_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
             
@@ -840,7 +840,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </form>
 
         <!-- Register Form -->
-        <form id="register-form" class="auth-form <?php echo $activeTab === 'register' ? 'active' : ''; ?>" method="POST" action="auth.php">
+        <form id="register-form" class="auth-form <?php echo $activeTab === 'register' ? 'active' : ''; ?>" method="POST" action="">
             <input type="hidden" name="action" value="register">
             <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(sketch_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
 
@@ -889,7 +889,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </form>
 
         <!-- Verification Form -->
-        <form id="verify-form" class="auth-form <?php echo $activeTab === 'verify' ? 'active' : ''; ?>" method="POST" action="auth.php">
+        <form id="verify-form" class="auth-form <?php echo $activeTab === 'verify' ? 'active' : ''; ?>" method="POST" action="">
             <input type="hidden" name="action" value="verify">
             <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(sketch_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
 
@@ -907,7 +907,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </form>
 
         <!-- Forgot Password Form -->
-        <form id="forgot-form" class="auth-form <?php echo $activeTab === 'forgot' ? 'active' : ''; ?>" method="POST" action="auth.php">
+        <form id="forgot-form" class="auth-form <?php echo $activeTab === 'forgot' ? 'active' : ''; ?>" method="POST" action="">
             <input type="hidden" name="action" value="forgot_request">
             <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(sketch_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
 
@@ -925,7 +925,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </form>
 
         <!-- Reset Password Form -->
-        <form id="reset-form" class="auth-form <?php echo $activeTab === 'reset' ? 'active' : ''; ?>" method="POST" action="auth.php">
+        <form id="reset-form" class="auth-form <?php echo $activeTab === 'reset' ? 'active' : ''; ?>" method="POST" action="">
             <input type="hidden" name="action" value="reset_submit">
             <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(sketch_csrf_token(), ENT_QUOTES, 'UTF-8'); ?>">
 
