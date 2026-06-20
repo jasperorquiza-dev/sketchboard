@@ -775,10 +775,11 @@ button.mini-btn {
     background: rgba(43,46,45,0.45);
     backdrop-filter: blur(2px);
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
+    overflow-y: auto;
     z-index: 2000;
-    padding: 20px;
+    padding: 40px 20px;
 }
 
 .modal {
@@ -793,6 +794,7 @@ button.mini-btn {
     flex-direction: column;
     gap: 16px;
     border-radius: 6px;
+    margin: auto 0;
     position: relative;
 }
 
@@ -966,6 +968,7 @@ button.mini-btn {
     box-shadow: var(--shadow-stacked);
     position: relative;
     text-align: center;
+    margin: auto 0;
 }
 
 .about-modal .close-btn {
