@@ -669,3 +669,114 @@ function sketch_cleanup_stale_rooms(?int $cleanupAfter = null): void
         }
     }
 }
+
+function sketch_render_about_modal(): void
+{
+    $members = [
+        [
+            'name' => 'Joseph Immanuel Sanchez',
+            'img' => 'joseph.jpg',
+            'fb' => 'https://www.facebook.com/yangreong.liang'
+        ],
+        [
+            'name' => 'James Clark',
+            'img' => 'james.jpg',
+            'fb' => 'https://www.facebook.com/jamesclark.gimeda'
+        ],
+        [
+            'name' => 'Jhon Carlo Dimaculangan',
+            'img' => 'jhon.png',
+            'fb' => 'https://www.facebook.com/kwaiijhoncarlo.dimaculangan.7'
+        ],
+        [
+            'name' => 'Kenneth Catangay',
+            'img' => 'kenneth.png',
+            'fb' => 'https://www.facebook.com/kenneth.catangay.5'
+        ],
+        [
+            'name' => 'Harold Uy Hibaya',
+            'img' => 'hibaya.png',
+            'fb' => 'https://www.facebook.com/theycallme.rold'
+        ],
+    ];
+    ?>
+    <div id="about-modal-overlay" class="modal-overlay hidden" style="opacity: 0; transition: opacity 0.2s ease;">
+        <div class="modal about-modal">
+            <button type="button" class="close-btn" id="close-about-modal">&times;</button>
+            <h2 class="about-modal-title">About Sketchboard</h2>
+            <p class="about-modal-desc">
+                Sketchboard is a lightweight, real-time collaborative whiteboard studio designed to bring your thoughts, sketches, and brainstorming sessions to life.
+            </p>
+            
+            <div class="about-team-section">
+                <h3 class="about-team-title">Meet the Team</h3>
+                
+                <!-- Top Row (2 members) -->
+                <div class="about-team-row">
+                    <?php foreach (array_slice($members, 0, 2) as $member): ?>
+                        <div class="about-team-member">
+                            <img class="about-member-img" src="<?php echo htmlspecialchars(sketch_base_url(), ENT_QUOTES, 'UTF-8'); ?>/picture/<?php echo $member['img']; ?>" alt="<?php echo htmlspecialchars($member['name'], ENT_QUOTES, 'UTF-8'); ?>">
+                            <span class="about-member-name"><?php echo htmlspecialchars($member['name'], ENT_QUOTES, 'UTF-8'); ?></span>
+                            <a href="<?php echo htmlspecialchars($member['fb'], ENT_QUOTES, 'UTF-8'); ?>" target="_blank" class="about-member-link" rel="noopener noreferrer" title="Visit Facebook Profile">
+                                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style="display: block;">
+                                    <path d="M16 8.049c0-4.446-3.582-8.05-8-8.05C3.58 0-.002 3.603-.002 8.05c0 4.017 2.926 7.347 6.75 7.951v-5.625h-2.03V8.05H6.75V6.275c0-2.017 1.195-3.131 3.022-3.131.876 0 1.791.157 1.791.157v1.98h-1.009c-.993 0-1.303.621-1.303 1.258v1.51h2.218l-.354 2.326H9.25V16c3.824-.604 6.75-3.934 6.75-7.951"/>
+                                </svg>
+                            </a>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+
+                <!-- Bottom Row (3 members) -->
+                <div class="about-team-row">
+                    <?php foreach (array_slice($members, 2) as $member): ?>
+                        <div class="about-team-member">
+                            <img class="about-member-img" src="<?php echo htmlspecialchars(sketch_base_url(), ENT_QUOTES, 'UTF-8'); ?>/picture/<?php echo $member['img']; ?>" alt="<?php echo htmlspecialchars($member['name'], ENT_QUOTES, 'UTF-8'); ?>">
+                            <span class="about-member-name"><?php echo htmlspecialchars($member['name'], ENT_QUOTES, 'UTF-8'); ?></span>
+                            <a href="<?php echo htmlspecialchars($member['fb'], ENT_QUOTES, 'UTF-8'); ?>" target="_blank" class="about-member-link" rel="noopener noreferrer" title="Visit Facebook Profile">
+                                <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16" style="display: block;">
+                                    <path d="M16 8.049c0-4.446-3.582-8.05-8-8.05C3.58 0-.002 3.603-.002 8.05c0 4.017 2.926 7.347 6.75 7.951v-5.625h-2.03V8.05H6.75V6.275c0-2.017 1.195-3.131 3.022-3.131.876 0 1.791.157 1.791.157v1.98h-1.009c-.993 0-1.303.621-1.303 1.258v1.51h2.218l-.354 2.326H9.25V16c3.824-.604 6.75-3.934 6.75-7.951"/>
+                                </svg>
+                            </a>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const openBtns = document.querySelectorAll('#open-about-modal');
+            const overlay = document.getElementById('about-modal-overlay');
+            const closeBtn = document.getElementById('close-about-modal');
+            
+            if (openBtns.length > 0 && overlay && closeBtn) {
+                const openModal = (e) => {
+                    e.preventDefault();
+                    overlay.classList.remove('hidden');
+                    // Force layout reflow
+                    void overlay.offsetWidth;
+                    overlay.style.opacity = '1';
+                };
+                
+                const closeModal = () => {
+                    overlay.style.opacity = '0';
+                    setTimeout(() => {
+                        overlay.classList.add('hidden');
+                    }, 200);
+                };
+                
+                openBtns.forEach(btn => btn.addEventListener('click', openModal));
+                closeBtn.addEventListener('click', closeModal);
+                
+                overlay.addEventListener('click', (e) => {
+                    if (e.target === overlay) {
+                        closeModal();
+                    }
+                });
+            }
+        });
+    </script>
+    <?php
+}
+

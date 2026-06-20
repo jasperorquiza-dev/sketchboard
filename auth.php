@@ -854,9 +854,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <input type="email" id="reg-email" name="email" class="auth-input" required placeholder="you@example.com">
             </div>
 
-            <div class="input-group">
+            <div class="input-group" style="position: relative;">
                 <label for="reg-password">Password</label>
-                <input type="password" id="reg-password" name="password" class="auth-input" required placeholder="Minimum 8 characters">
+                <input type="password" id="reg-password" name="password" class="auth-input" required placeholder="Minimum 8 characters" autocomplete="new-password">
+                
+                <div id="password-validator-popup" class="validator-popup hidden">
+                    <ul class="validator-list">
+                        <li id="req-length" class="validator-req">
+                            <span class="bullet">&bull;</span>
+                            <span class="text">At least 8 characters</span>
+                        </li>
+                        <li id="req-upper" class="validator-req">
+                            <span class="bullet">&bull;</span>
+                            <span class="text">One uppercase letter</span>
+                        </li>
+                        <li id="req-lower" class="validator-req">
+                            <span class="bullet">&bull;</span>
+                            <span class="text">One lowercase letter</span>
+                        </li>
+                        <li id="req-number" class="validator-req">
+                            <span class="bullet">&bull;</span>
+                            <span class="text">One number</span>
+                        </li>
+                    </ul>
+                </div>
             </div>
 
             <div class="input-group">
@@ -924,6 +945,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <a href="#" onclick="switchTab('login'); return false;" style="font-size: 0.85rem; color: var(--clr-ink-light); text-decoration: underline; font-weight: 700;">Back to Sign In</a>
             </div>
         </form>
+        
+        <div style="text-align: center; margin-top: 20px; border-top: 1px dashed rgba(0,0,0,0.12); padding-top: 15px;">
+            <a href="#" id="open-about-modal" style="font-size: 0.85rem; color: var(--clr-ink-light); text-decoration: underline; font-weight: 700;">About Sketchboard</a>
+        </div>
     </div>
 
     <script>
@@ -965,6 +990,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 document.getElementById('reset-password').focus();
             }
         }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const regPassword = document.getElementById('reg-password');
+            const validatorPopup = document.getElementById('password-validator-popup');
+            
+            if (regPassword && validatorPopup) {
+                const reqs = {
+                    length: { el: document.getElementById('req-length'), test: val => val.length >= 8 },
+                    upper: { el: document.getElementById('req-upper'), test: val => /[A-Z]/.test(val) },
+                    lower: { el: document.getElementById('req-lower'), test: val => /[a-z]/.test(val) },
+                    number: { el: document.getElementById('req-number'), test: val => /[0-9]/.test(val) }
+                };
+                
+                const validate = () => {
+                    const val = regPassword.value;
+                    Object.keys(reqs).forEach(key => {
+                        const req = reqs[key];
+                        const isValid = req.test(val);
+                        const bullet = req.el.querySelector('.bullet');
+                        
+                        if (isValid) {
+                            req.el.classList.add('valid');
+                            if (bullet) bullet.textContent = '✓';
+                        } else {
+                            req.el.classList.remove('valid');
+                            if (bullet) bullet.textContent = '•';
+                        }
+                    });
+                };
+                
+                let typingTimeout;
+                
+                const showPopup = () => {
+                    clearTimeout(typingTimeout);
+                    validatorPopup.classList.remove('hidden');
+                };
+                
+                const hidePopupSmoothly = () => {
+                    clearTimeout(typingTimeout);
+                    typingTimeout = setTimeout(() => {
+                        validatorPopup.classList.add('hidden');
+                    }, 1500);
+                };
+                
+                regPassword.addEventListener('focus', () => {
+                    showPopup();
+                    validate();
+                    hidePopupSmoothly();
+                });
+                
+                regPassword.addEventListener('blur', () => {
+                    clearTimeout(typingTimeout);
+                    validatorPopup.classList.add('hidden');
+                });
+                
+                regPassword.addEventListener('input', () => {
+                    showPopup();
+                    validate();
+                    hidePopupSmoothly();
+                });
+            }
+        });
     </script>
+    <?php sketch_render_about_modal(); ?>
 </body>
 </html>
